@@ -1,0 +1,31 @@
+/* Timeline styles */
+#content.timeline dt.successbuild, #content.timeline dt.successbuild a,
+#content.timeline dt.failedbuild, #content.timeline dt.failedbuild a {
+ background-image: url(build.png) !important
+}
+
+#content.build form.config td.active { vertical-align: bottom; }
+#content.build form.platforms ul { list-style: none; padding-left: 1em; }
+
+#content.build #builds { margin-top: 2em; }
+#content.build #builds th.rev { width: 6em; }
+#content.build #builds td :link, #content.build #builds td :visited {
+ font-weight: bold;
+}
+#content.build #builds td.completed { background: #9d9; }
+#content.build #builds td.failed { background: #d99; }
+#content.build #builds td.in-progress { background: #ff9; }
+
+#content.build .reports {
+ background: #d7d7d7;
+ float: right;
+ font-size: 90%;
+ margin: .5em 0 .5em 1em;
+ padding: .5em;
+}
+#content.build .reports h3 { margin: 0; }
+#content.build .reports ul { margin: 0; padding: 0; list-style: none; }
+
+#content.build .log { clear: right; overflow: auto; white-space: pre; }
+#content.build .log .warning { color: #660; font-weight: bold; }
+#content.build .log .error { color: #900; font-weight: bold; }
