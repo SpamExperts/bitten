@@ -1,0 +1,46 @@
+/* Timeline styles */
+#content.timeline dt.successbuild, #content.timeline dt.successbuild a,
+#content.timeline dt.failedbuild, #content.timeline dt.failedbuild a {
+ background-image: url(bitten_build.png) !important
+}
+
+#content.build #prefs { line-height: 1.4em; }
+
+#content.build form.config th { text-align: left; }
+#content.build form.config fieldset { margin-bottom: 1em; }
+#content.build form.platforms ul { list-style: none; padding-left: 1em; }
+
+#content.build #charts { clear: right; float: right; width: 44%; }
+
+#content.build #builds { clear: none; margin-top: 2em; table-layout: fixed;
+ width: 54%;
+}
+#content.build #builds tbody th, #content.build #builds tbody td {
+ background: #fff;
+}
+#content.build #builds th.chgset { width: 6em; }
+#content.build #builds td :link, #content.build #builds td :visited {
+ font-weight: bold;
+}
+#content.build #builds td.completed { background: #9d9; }
+#content.build #builds td.failed { background: #d99; }
+#content.build #builds td.in-progress { background: #ff9; }
+
+#content.build .tabs { list-style: none; float: left; width: 100%; margin: 0;
+ padding: 0; }
+#content.build .tabs li { cursor: pointer; float: left; }
+#content.build .tabs li a { background: #b9b9b9; color: #666; display: block;
+ margin: 2px 2px 0; padding: 3px 2em 0; }
+#content.build .tabs li a:hover { color: #333; text-decoration: none; }
+#content.build .tabs li.active a { background: #d7d7d7; border: 1px outset;
+ border-bottom: none; color: #333; font-weight: bold; margin-top: 0;
+ padding-bottom: 1px; }
+#content.build .tab-content { background: #fff; border: 1px outset;
+ clear: both; padding: 5px; }
+#content.build .tab-content table { margin: 0; }
+
+#content.build .log { border: 1px inset; overflow: auto; max-height: 30em;
+ width: 100%; white-space: pre; }
+#content.build .log code { padding: 0 5px; }
+#content.build .log .warning { color: #660; font-weight: bold; }
+#content.build .log .error { color: #900; font-weight: bold; }

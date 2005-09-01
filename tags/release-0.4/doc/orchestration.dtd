@@ -1,0 +1,78 @@
+<!--
+DTD for the Bitten build orchestration BEEP profile.
+-->
+
+<!--
+Slave registration.
+-->
+<!ELEMENT register    (platform, os)>
+<!ATTLIST register
+          name        CDATA             #REQUIRED
+          maintainer  CDATA             #IMPLIED>
+
+<!--
+Platform/machine information for slave registration.
+-->
+<!ELEMENT platform    #PCDATA>
+<!ATTLIST os
+          processor   CDATA             #IMPLIED>
+
+<!--
+Operating system information for slave registration.
+-->
+<!ELEMENT os          #PCDATA>
+<!ATTLIST os
+          family      CDATA             #REQUIRED
+          version     CDATA             #IMPLIED>
+
+<!--
+Reply message from the master when registration of a slave was successful
+-->
+<!ELEMENT ok          EMPTY>
+
+<!--
+Generic error message. Can be received in response to registration or build
+initiation.
+-->
+<!ELEMENT error       #PCDATA>
+<!ATTLIST error
+          code        CDATA             #REQUIRED>
+
+<!--
+Build initiation request sent by the master to a slave.
+-->
+<!ELEMENT build       #PCDATA>
+<!ATTLIST build
+          recipe      CDATA             #REQUIRED>
+
+<!--
+Build request acknowledgement.
+-->
+<!ELEMENT started     EMPTY>
+<!ATTLIST started
+          time        CDATA>
+
+<!--
+Build status reporting: ANS payload sent by the slave for every build step
+processed.
+-->
+<!ELEMENT step        #PCDATA>
+<!ATTLIST step
+          id          ID                #REQUIRED
+          result      (success|failure) #REQUIRED
+          description CDATA             #IMPLIED
+          time        CDATA             #REQUIRED
+          duration    CDATA             #REQUIRED>
+
+<!--
+Completion of a build by the slave, independent of outcome.
+-->
+<!ELEMENT completed   #PCDATA>
+<!ATTLIST completed
+          result      (success|failure) #REQUIRED
+          time        CDATA>
+
+<!--
+Cancellation of a build by the slave.
+-->
+<!ELEMENT aborted     #PCDATA>
