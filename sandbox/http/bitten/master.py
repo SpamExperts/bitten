@@ -32,8 +32,6 @@ from bitten.queue import BuildQueue
 from bitten.trac_ext.main import BuildSystem
 from bitten.util import xmlio
 
-log = logging.getLogger('bitten.master')
-
 
 class BuildMaster(Component):
     """BEEP listener implementation for the build master."""
@@ -87,15 +85,14 @@ class BuildMaster(Component):
         if not req.args['collection']:
             return self._process_build_initiation(req, config, build)
         elif req.args['collection'] == 'steps':
-            return self._process_build_step(build, config, build,
+            return self._process_build_step(req, config, build,
                                             req.args['member'])
         elif req.args['collection'] == 'files':
-            return self._process_build_artifact(build, config, build,
+            return self._process_build_artifact(req, config, build,
                                                 req.args['member'])
 
     def _process_build_creation(self, req):
-        body = req.read()
-        elem = xmlio.parse(body)
+        elem = xmlio.parse(req.read())
 
         info = {'name': elem.attr['name'], Build.IP_ADDRESS: req.remote_addr}
         for child in elem.children():
@@ -140,7 +137,59 @@ class BuildMaster(Component):
         req.send(str(xml), 'application/x-bitten+xml', 200)
 
     def _process_build_step(self, req, config, build, stepname):
-        raise NotImplementedError
+        elem = xmlio.parse(req.read())
+        self.log.debug('Slave %s completed step "%s" with status %s',
+                       build.slave, stepname, elem.attr['status'])
+
+        db = self.env.get_db_cnx()
+
+        step = BuildStep(self.env, build=build.id, name=stepname)
+        step.started = int(_parse_iso_datetime(elem.attr['time']))
+        step.stopped = step.started + int(elem.attr['duration'])
+        if elem.attr['status'] == 'failure':
+            self.log.warning('Build %s step %s failed', build.id, stepname)
+            step.status = BuildStep.FAILURE
+        else:
+            step.status = BuildStep.SUCCESS
+        step.errors += [error.gettext() for error in elem.children('error')]
+        step.insert(db=db)
+
+        for idx, log_elem in enumerate(elem.children('log')):
+            build_log = BuildLog(self.env, build=build.id, step=step.name,
+                                 generator=log_elem.attr.get('generator'),
+                                 orderno=idx)
+            for message_elem in log_elem.children('message'):
+                build_log.messages.append((message_elem.attr['level'],
+                                           message_elem.gettext()))
+            build_log.insert(db=db)
+
+        for report_elem in elem.children('report'):
+            report = Report(self.env, build=build.id, step=step.name,
+                            category=report_elem.attr.get('category'),
+                            generator=report_elem.attr.get('generator'))
+            for item_elem in report_elem.children():
+                item = {'type': item_elem.name}
+                item.update(item_elem.attr)
+                for child_elem in item_elem.children():
+                    item[child_elem.name] = child_elem.gettext()
+                report.items.append(item)
+            report.insert(db=db)
+
+        db.commit()
+
+        req.send('Build step processed', 'text/plain')
 
     def _process_build_artifact(self, req, config, build, filename):
         raise NotImplementedError
+
+
+def _parse_iso_datetime(string):
+    """Minimal parser for ISO date-time strings.
+    
+    Return the time as floating point number. Only handles UTC timestamps
+    without time zone information."""
+    try:
+        string = string.split('.', 1)[0] # strip out microseconds
+        return calendar.timegm(time.strptime(string, '%Y-%m-%dT%H:%M:%S'))
+    except ValueError, e:
+        raise ValueError('Invalid ISO date/time %s (%s)' % (string, e))

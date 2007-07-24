@@ -148,20 +148,19 @@ class BuildSlave(object):
             failed = step_failed = True
         xml.attr['duration'] = (datetime.utcnow() - started).seconds
         if step_failed:
-            xml.attr['result'] = 'failure'
+            xml.attr['status'] = 'failure'
             log.warning('Build step %s failed', step.id)
         else:
-            xml.attr['result'] = 'success'
-            log.info('Build step %s completed successfully',
-                     step.id)
+            xml.attr['status'] = 'success'
+            log.info('Build step %s completed successfully', step.id)
 
         resp, content = self.client.request(build_url + '/steps/' + step.id,
-                                            'PUT', str(xml),
-                                            headers={
+                                            'PUT', str(xml), headers={
             'Content-Type': 'application/x-bitten+xml'
         })
-        if resp.status != 201:
+        if resp.status != 200:
             log.error('Unexpected response (%d): %s', resp.status, resp.reason)
+
 
 def main():
     """Main entry point for running the build slave."""
