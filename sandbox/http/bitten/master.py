@@ -24,7 +24,8 @@ import time
 from trac.config import BoolOption, IntOption
 from trac.core import *
 from trac.env import Environment
-from trac.web import IRequestHandler, HTTPMethodNotAllowed, RequestDone
+from trac.web import IRequestHandler, HTTPMethodNotAllowed, HTTPNotFound, \
+                     RequestDone
 
 from bitten.model import BuildConfig, Build, BuildStep, BuildLog, Report
 from bitten.queue import BuildQueue
@@ -61,21 +62,29 @@ class BuildMaster(Component):
     # IRequestHandler methods
 
     def match_request(self, req):
-        match = re.match(r'/builds(?:/(\d+))?$', req.path_info)
+        match = re.match(r'/builds(?:/(\d+)(?:(.*)))?$', req.path_info)
         if match:
             if match.group(1):
                 req.args['id'] = match.group(1)
+                req.args['path'] = match.group(2)
             return True
 
     def process_request(self, req):
         req.perm.assert_permission('BUILD_EXEC')
 
-        self.queue.populate()
-
         if 'id' not in req.args:
             if req.method != 'POST':
-                raise HTTPMethodNotAllowed()
+                raise HTTPMethodNotAllowed('Method not allowed')
+            self.queue.populate()
             return self._process_build_creation(req)
+
+        build = Build.fetch(self.env, req.args['id'])
+        if not build:
+            raise HTTPNotFound('No such build')
+        config = BuildConfig.fetch(self.env, build.config)
+
+        if not req.args['path']:
+            return self._process_build_initiation(req, config, build)
 
     def _process_build_creation(self, req):
         body = req.read()
@@ -108,5 +117,11 @@ class BuildMaster(Component):
         build.update()
 
         req.send_response(201)
-        req.send_header('Location', req.abs_href.build(build.id))
+        req.send_header('Location', req.abs_href.builds(build.id))
         raise RequestDone
+
+    def _process_build_initiation(self, req, config, build):
+        req.send_header('Content-Disposition',
+                        'attachment; filename=recipe_%s_r%s.xml' %
+                        (config.name, build.rev))
+        req.send(config.recipe, 'application/x-bitten+xml', 200)

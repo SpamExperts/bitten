@@ -16,7 +16,7 @@ import unittest
 
 from trac.perm import PermissionCache, PermissionSystem
 from trac.test import EnvironmentStub, Mock
-from trac.web.api import RequestDone
+from trac.web.api import HTTPMethodNotAllowed, HTTPNotFound, RequestDone
 from trac.web.href import Href
 
 from bitten.master import BuildMaster
@@ -91,11 +91,23 @@ class BuildMasterTestCase(unittest.TestCase):
         except RequestDone:
             self.assertEqual([201], status)
             location = outheaders['Location']
-            mo = re.match('http://example.org/trac/build/(\d+)', location)
-            assert mo
+            mo = re.match('http://example.org/trac/builds/(\d+)', location)
+            assert mo, 'Location was %r' % location
             build = Build.fetch(self.env, int(mo.group(1)))
             self.assertEqual(Build.IN_PROGRESS, build.status)
             self.assertEqual('hal', build.slave)
+
+    def test_create_build_no_post(self):
+        req = Mock(method='GET', base_path='', path_info='/builds',
+                   href=Href('/trac'), ipnr='127.0.0.1', args={},
+                   perm=PermissionCache(self.env, 'hal'))
+        module = BuildMaster(self.env)
+        assert module.match_request(req)
+        try:
+            module.process_request(req)
+            self.fail('Expected HTTPMethodNotAllowed')
+        except HTTPMethodNotAllowed:
+            pass
 
     def test_create_build_no_match(self):
         inheaders = {'Content-Type': 'application/x-bitten+xml'}
@@ -120,6 +132,51 @@ class BuildMasterTestCase(unittest.TestCase):
             self.fail('Expected RequestDone')
         except RequestDone:
             self.assertEqual(['No pending builds', 'text/plain', 204], sent)
+
+    def test_no_such_build(self):
+        req = Mock(method='GET', base_path='',
+                   path_info='/builds/123', href=Href('/trac'),
+                   ipnr='127.0.0.1', args={},
+                   perm=PermissionCache(self.env, 'hal'))
+
+        module = BuildMaster(self.env)
+        assert module.match_request(req)
+        try:
+            module.process_request(req)
+            self.fail('Expected HTTPNotFound')
+        except HTTPNotFound:
+            pass
+
+    def test_fetch_recipe(self):
+        config = BuildConfig(self.env, 'test', path='somepath', active=True,
+                             recipe='<build></build>')
+        config.insert()
+        platform = TargetPlatform(self.env, config='test', name="Unix")
+        platform.rules.append(('family', 'posix'))
+        platform.insert()
+        build = Build(self.env, 'test', '123', platform.id, slave='hal',
+                      rev_time=42)
+        build.insert()
+
+        outheaders = {}
+        sent = []
+        def send(content, content_type, status_code):
+            sent[:] = [content, content_type, status_code]
+            raise RequestDone
+        req = Mock(method='GET', base_path='',
+                   path_info='/builds/%d' % build.id,
+                   href=Href('/trac'), ipnr='127.0.0.1', args={},
+                   send_header=lambda x, y: outheaders.__setitem__(x, y),
+                   send=send, perm=PermissionCache(self.env, 'hal'))
+
+        module = BuildMaster(self.env)
+        assert module.match_request(req)
+        try:
+            module.process_request(req)
+            self.fail('Expected RequestDone')
+        except RequestDone:
+            self.assertEqual(['application/x-bitten+xml', 200], sent[1:])
+            self.assertEqual('<build></build>', sent[0])
 
 
 def suite():
