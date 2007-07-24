@@ -90,7 +90,7 @@ class BuildMaster(Component):
         body = req.read()
         elem = xmlio.parse(body)
 
-        info = {'name': elem.attr['name'], Build.IP_ADDRESS: req.ipnr}
+        info = {'name': elem.attr['name'], Build.IP_ADDRESS: req.remote_addr}
         for child in elem.children():
             if child.name == 'platform':
                 info[Build.MACHINE] = child.gettext()
@@ -116,9 +116,8 @@ class BuildMaster(Component):
         build.status = Build.IN_PROGRESS
         build.update()
 
-        req.send_response(201)
         req.send_header('Location', req.abs_href.builds(build.id))
-        raise RequestDone
+        req.send('Build pending', 'text/plain', 201)
 
     def _process_build_initiation(self, req, config, build):
         req.send_header('Content-Disposition',

@@ -66,7 +66,6 @@ class BuildMasterTestCase(unittest.TestCase):
 
         inheaders = {'Content-Type': 'application/x-bitten+xml'}
         outheaders = {}
-        status = [None]
         body = StringIO("""<slave name="hal">
   <platform>Power Macintosh</platform>
   <os family="posix" version="8.1.0">Darwin</os>
@@ -77,11 +76,11 @@ class BuildMasterTestCase(unittest.TestCase):
             raise RequestDone
         req = Mock(method='POST', base_path='', path_info='/builds',
                    href=Href('/trac'), abs_href=Href('http://example.org/trac'),
-                   ipnr='127.0.0.1', args={},
+                   remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
                    get_header=lambda x: inheaders.get(x), read=body.read,
                    send_header=lambda x, y: outheaders.__setitem__(x, y),
-                   send_response=lambda x: status.__setitem__(0, x))
+                   send=send)
 
         module = BuildMaster(self.env)
         assert module.match_request(req)
@@ -89,7 +88,7 @@ class BuildMasterTestCase(unittest.TestCase):
             module.process_request(req)
             self.fail('Expected RequestDone')
         except RequestDone:
-            self.assertEqual([201], status)
+            self.assertEqual(['Build pending', 'text/plain', 201], sent)
             location = outheaders['Location']
             mo = re.match('http://example.org/trac/builds/(\d+)', location)
             assert mo, 'Location was %r' % location
@@ -99,7 +98,7 @@ class BuildMasterTestCase(unittest.TestCase):
 
     def test_create_build_no_post(self):
         req = Mock(method='GET', base_path='', path_info='/builds',
-                   href=Href('/trac'), ipnr='127.0.0.1', args={},
+                   href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'))
         module = BuildMaster(self.env)
         assert module.match_request(req)
@@ -120,7 +119,7 @@ class BuildMasterTestCase(unittest.TestCase):
             sent[:] = [content, content_type, status_code]
             raise RequestDone
         req = Mock(method='POST', base_path='', path_info='/builds',
-                   href=Href('/trac'), ipnr='127.0.0.1', args={},
+                   href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
                    get_header=lambda x: inheaders.get(x), read=buf.read,
                    send=send)
@@ -136,7 +135,7 @@ class BuildMasterTestCase(unittest.TestCase):
     def test_no_such_build(self):
         req = Mock(method='GET', base_path='',
                    path_info='/builds/123', href=Href('/trac'),
-                   ipnr='127.0.0.1', args={},
+                   remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'))
 
         module = BuildMaster(self.env)
@@ -165,7 +164,7 @@ class BuildMasterTestCase(unittest.TestCase):
             raise RequestDone
         req = Mock(method='GET', base_path='',
                    path_info='/builds/%d' % build.id,
-                   href=Href('/trac'), ipnr='127.0.0.1', args={},
+                   href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    send_header=lambda x, y: outheaders.__setitem__(x, y),
                    send=send, perm=PermissionCache(self.env, 'hal'))
 
