@@ -64,7 +64,6 @@ class BuildSlave(object):
         self.single_build = single_build
         self.client = httplib2.Http()
         self.running = False
-
     def run(self):
         self.running = True
         while self.running:
