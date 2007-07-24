@@ -127,27 +127,27 @@ class BuildSlave(object):
 
     def _execute_step(self, build_url, recipe, step):
         log.info('Executing build step "%s"', step.id)
+        failed = False
         started = datetime.utcnow()
-        step_failed = False
         xml = xmlio.Element('result', time=started.isoformat())
         try:
             for type, category, generator, output in \
                     step.execute(recipe.ctxt):
                 if type == Recipe.ERROR:
-                    step_failed = True
+                    failed = True
                 xml.append(xmlio.Element(type, category=category,
                                          generator=generator)[
                     output
                 ])
         except BuildError, e:
             log.error('Build step %s failed (%s)', step.id, e)
-            failed = step_failed = True
+            failed = True
         except Exception, e:
             log.error('Internal error in build step %s',
                       step.id, exc_info=True)
-            failed = step_failed = True
+            failed = True
         xml.attr['duration'] = (datetime.utcnow() - started).seconds
-        if step_failed:
+        if failed:
             xml.attr['status'] = 'failure'
             log.warning('Build step %s failed', step.id)
         else:

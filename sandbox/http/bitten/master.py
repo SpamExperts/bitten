@@ -29,6 +29,7 @@ from trac.web import IRequestHandler, HTTPMethodNotAllowed, HTTPNotFound, \
 
 from bitten.model import BuildConfig, Build, BuildStep, BuildLog, Report
 from bitten.queue import BuildQueue
+from bitten.recipe import Recipe
 from bitten.trac_ext.main import BuildSystem
 from bitten.util import xmlio
 
@@ -93,8 +94,10 @@ class BuildMaster(Component):
 
     def _process_build_creation(self, req):
         elem = xmlio.parse(req.read())
-
         info = {'name': elem.attr['name'], Build.IP_ADDRESS: req.remote_addr}
+        self.log.info('Build slave %r connected from %s', info['name'],
+                      req.remote_addr)
+
         for child in elem.children():
             if child.name == 'platform':
                 info[Build.MACHINE] = child.gettext()
@@ -137,9 +140,20 @@ class BuildMaster(Component):
         req.send(str(xml), 'application/x-bitten+xml', 200)
 
     def _process_build_step(self, req, config, build, stepname):
+        xml = xmlio.parse(config.recipe)
+        index = None
+        step_elem = None
+        for num, elem in enumerate(xml.children('step')):
+            if elem.attr['id'] == stepname:
+                index = num
+                step_elem = elem
+        if index is None:
+            raise HTTPForbidden('No such build step')
+        last_step = index == num
+
         elem = xmlio.parse(req.read())
-        self.log.debug('Slave %s completed step "%s" with status %s',
-                       build.slave, stepname, elem.attr['status'])
+        self.log.debug('Slave %s completed step %d (%s) with status %s',
+                       build.slave, index, stepname, elem.attr['status'])
 
         db = self.env.get_db_cnx()
 
@@ -175,7 +189,21 @@ class BuildMaster(Component):
                 report.items.append(item)
             report.insert(db=db)
 
+        if last_step:
+            self.log.info('Slave %s completed build %d ("%s" as of [%s])',
+                          build.slave, build.id, build.config, build.rev)
+            build.stopped = step.stopped
+            # FIXME: determine whether the build has failed by inspecting the
+            #        step records and checking against the 'onerror' attribute
+            #        of the steps in the recipe??
+            build.status = Build.SUCCESS
+            build.update(db=db)
+
         db.commit()
+
+        if last_step:
+            for listener in BuildSystem(self.env).listeners:
+                listener.build_completed(build)
 
         req.send('Build step processed', 'text/plain')
 
