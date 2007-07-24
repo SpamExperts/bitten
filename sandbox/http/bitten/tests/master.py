@@ -175,7 +175,8 @@ class BuildMasterTestCase(unittest.TestCase):
             self.fail('Expected RequestDone')
         except RequestDone:
             self.assertEqual(['application/x-bitten+xml', 200], sent[1:])
-            self.assertEqual('<build></build>', sent[0])
+            self.assertEqual('<build path="somepath" revision="123"/>',
+                             sent[0])
 
 
 def suite():

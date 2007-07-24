@@ -63,13 +63,16 @@ class BuildSlave(object):
         self.keep_files = keep_files
         self.single_build = single_build
         self.client = httplib2.Http()
+        self.running = False
 
     def run(self):
-        while True:
+        self.running = True
+        while self.running:
             self._create_build()
             time.sleep(30)
 
     def quit(self):
+        self.running = False
         log.info('Shutting down')
 
     def _create_build(self):
@@ -98,14 +101,67 @@ class BuildSlave(object):
             log.error('Unexpected response (%d): %s', resp.status, resp.reason)
 
     def _initiate_build(self, build_url):
-        log.info('Build pending: %s' % build_url.split('/')[-1])
+        build_id = int(build_url.split('/')[-1])
+        log.info('Build pending: %s' % build_id)
         resp, content = self.client.request(build_url, 'GET')
         if resp.status == 200:
-            recipe = xmlio.parse(content)
-            print recipe
+            xml = xmlio.parse(content)
+            basedir = os.path.join(self.work_dir, 'build_%d' % build_id)
+            if not os.path.exists(basedir):
+                os.mkdir(basedir)
+            try:
+                recipe = Recipe(xml, basedir, self.config)
+                self._execute_build(build_url, recipe)
+            finally:
+                if not self.keep_files:
+                    shutil.rmtree(basedir)
+                if self.single_build:
+                    log.info('Exiting after single build completed.')
+                    self.quit()
         else:
             log.error('Unexpected response (%d): %s', resp.status, resp.reason)
 
+    def _execute_build(self, build_url, recipe):
+        for step in recipe:
+            self._execute_step(build_url, recipe, step)
+
+    def _execute_step(self, build_url, recipe, step):
+        log.info('Executing build step "%s"', step.id)
+        started = datetime.utcnow()
+        step_failed = False
+        xml = xmlio.Element('result', time=started.isoformat())
+        try:
+            for type, category, generator, output in \
+                    step.execute(recipe.ctxt):
+                if type == Recipe.ERROR:
+                    step_failed = True
+                xml.append(xmlio.Element(type, category=category,
+                                         generator=generator)[
+                    output
+                ])
+        except BuildError, e:
+            log.error('Build step %s failed (%s)', step.id, e)
+            failed = step_failed = True
+        except Exception, e:
+            log.error('Internal error in build step %s',
+                      step.id, exc_info=True)
+            failed = step_failed = True
+        xml.attr['duration'] = (datetime.utcnow() - started).seconds
+        if step_failed:
+            xml.attr['result'] = 'failure'
+            log.warning('Build step %s failed', step.id)
+        else:
+            xml.attr['result'] = 'success'
+            log.info('Build step %s completed successfully',
+                     step.id)
+
+        resp, content = self.client.request(build_url + '/steps/' + step.id,
+                                            'PUT', str(xml),
+                                            headers={
+            'Content-Type': 'application/x-bitten+xml'
+        })
+        if resp.status != 201:
+            log.error('Unexpected response (%d): %s', resp.status, resp.reason)
 
 def main():
     """Main entry point for running the build slave."""

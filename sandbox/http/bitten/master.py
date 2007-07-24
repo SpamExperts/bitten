@@ -126,4 +126,8 @@ class BuildMaster(Component):
         req.send_header('Content-Disposition',
                         'attachment; filename=recipe_%s_r%s.xml' %
                         (config.name, build.rev))
-        req.send(config.recipe, 'application/x-bitten+xml', 200)
+
+        xml = xmlio.parse(config.recipe)
+        xml.attr['path'] = config.path
+        xml.attr['revision'] = build.rev
+        req.send(str(xml), 'application/x-bitten+xml', 200)
