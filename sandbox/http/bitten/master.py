@@ -120,6 +120,9 @@ class BuildMaster(Component):
         req.send('Build pending', 'text/plain', 201)
 
     def _process_build_initiation(self, req, config, build):
+        build.started = int(time.time())
+        build.update()
+
         req.send_header('Content-Disposition',
                         'attachment; filename=recipe_%s_r%s.xml' %
                         (config.name, build.rev))
