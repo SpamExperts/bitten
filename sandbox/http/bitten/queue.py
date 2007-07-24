@@ -112,9 +112,9 @@ class BuildQueue(object):
 
         Otherwise, this function will return C{(None, None)}
         """
-        self.log.debug('Checking for pending builds...')
+        log.debug('Checking for pending builds...')
         if len(available_slaves) == 0: 
-            self.log.debug('No available slaves.')
+            log.debug('No available slaves.')
             return None, None
 
         repos = self.env.get_repository()
@@ -178,10 +178,9 @@ class BuildQueue(object):
         # Ignore pending builds for deactived build configs
         config = BuildConfig.fetch(self.env, build.config)
         if not config.active:   
-            self.log.info('Dropping build of configuration "%s" at '
-                          'revision [%s] on "%s" because the configuration is '
-                          'deactivated', config.name, build.rev,
-                          TargetPlatform.fetch(self.env, build.platform).name)
+            log.info('Dropping build of configuration "%s" at '
+                     'revision [%s] on "%s" because the configuration is '
+                     'deactivated', config.name, build.rev, TargetPlatform.fetch(self.env, build.platform).name)
             return True
 
         # Stay within the revision limits of the build config
@@ -191,11 +190,10 @@ class BuildQueue(object):
                                                     build.rev)):
             # This minimum and/or maximum revision has changed since
             # this build was enqueued, so drop it
-            self.log.info('Dropping build of configuration "%s" at '
-                          'revision [%s] on "%s" because it is outside of the '
-                          'revision range of the configuration', config.name,
-                          build.rev,
-                          TargetPlatform.fetch(self.env, build.platform).name)
+            log.info('Dropping build of configuration "%s" at '
+                     'revision [%s] on "%s" because it is outside of the '
+                     'revision range of the configuration', config.name,
+                     build.rev, TargetPlatform.fetch(self.env, build.platform).name)
             return True
         return False
 
