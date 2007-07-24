@@ -62,11 +62,12 @@ class BuildMaster(Component):
     # IRequestHandler methods
 
     def match_request(self, req):
-        match = re.match(r'/builds(?:/(\d+)(?:(.*)))?$', req.path_info)
+        match = re.match(r'/builds(?:/(\d+)(?:/(\w+)/([^/]+))?)?$', req.path_info)
         if match:
             if match.group(1):
                 req.args['id'] = match.group(1)
-                req.args['path'] = match.group(2)
+                req.args['collection'] = match.group(2)
+                req.args['member'] = match.group(3)
             return True
 
     def process_request(self, req):
@@ -83,8 +84,14 @@ class BuildMaster(Component):
             raise HTTPNotFound('No such build')
         config = BuildConfig.fetch(self.env, build.config)
 
-        if not req.args['path']:
+        if not req.args['collection']:
             return self._process_build_initiation(req, config, build)
+        elif req.args['collection'] == 'steps':
+            return self._process_build_step(build, config, build,
+                                            req.args['member'])
+        elif req.args['collection'] == 'files':
+            return self._process_build_artifact(build, config, build,
+                                                req.args['member'])
 
     def _process_build_creation(self, req):
         body = req.read()
@@ -131,3 +138,9 @@ class BuildMaster(Component):
         xml.attr['path'] = config.path
         xml.attr['revision'] = build.rev
         req.send(str(xml), 'application/x-bitten+xml', 200)
+
+    def _process_build_step(self, req, config, build, stepname):
+        raise NotImplementedError
+
+    def _process_build_artifact(self, req, config, build, filename):
+        raise NotImplementedError
