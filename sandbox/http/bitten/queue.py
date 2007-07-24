@@ -23,7 +23,6 @@ import logging
 import re
 
 from bitten.model import BuildConfig, TargetPlatform, Build, BuildStep
-from bitten.snapshot import SnapshotManager
 
 log = logging.getLogger('bitten.queue')
 
@@ -84,9 +83,8 @@ def collect_changes(repos, config, db=None):
 class BuildQueue(object):
     """Enapsulates the build queue of an environment.
     
-    A build queue manages the the registration of build slaves, creation and
-    removal of snapshot archives, and detection of repository revisions that
-    need to be built.
+    A build queue manages the the registration of build slaves and detection of
+    repository revisions that need to be built.
     """
 
     def __init__(self, env, build_all=False):
@@ -98,11 +96,6 @@ class BuildQueue(object):
         self.env = env
         self.build_all = build_all
         self.slaves = {} # Sets of slave names keyed by target platform ID
-
-        # Snapshot managers, keyed by build config name
-        self.snapshots = {}
-        for config in BuildConfig.select(self.env, include_inactive=True):
-            self.snapshots[config.name] = SnapshotManager(config)
 
         self.reset_orphaned_builds()
 
@@ -225,7 +218,7 @@ class BuildQueue(object):
                              platform.name)
                     build = Build(self.env, config=config.name,
                                   platform=platform.id, rev=str(rev),
-                                  rev_time = repos.get_changeset(rev).date)
+                                  rev_time=repos.get_changeset(rev).date)
                     builds.append(build)
                     break
                 elif not self.build_all:

@@ -37,6 +37,7 @@ setup(
         ],
         'trac.plugins': [
             'bitten.main = bitten.trac_ext.main',
+            'bitten.master = bitten.master',
             'bitten.web_ui = bitten.trac_ext.web_ui',
             'bitten.summarizers = bitten.trac_ext.summarizers',
             'bitten.charts = bitten.trac_ext.charts'
