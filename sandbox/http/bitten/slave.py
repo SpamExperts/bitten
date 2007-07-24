@@ -90,21 +90,21 @@ class BuildSlave(object):
                                                 headers={
             'Content-Type': 'application/x-bitten+xml'
         })
-        status = int(resp['status'])
-        if status == 201:
+        if resp.status == 201:
             self._initiate_build(resp['location'])
-        elif status == 204:
+        elif resp.status == 204:
             log.info(content)
         else:
-            log.error('Unexpected response (%d): %s', status, content)
+            log.error('Unexpected response (%d): %s', resp.status, resp.reason)
 
     def _initiate_build(self, build_url):
         log.info('Build pending: %s' % build_url.split('/')[-1])
         resp, content = self.client.request(build_url, 'GET')
-        status = int(resp['status'])
-        if status == 200:
+        if resp.status == 200:
             recipe = xmlio.parse(content)
             print recipe
+        else:
+            log.error('Unexpected response (%d): %s', resp.status, resp.reason)
 
 
 def main():
