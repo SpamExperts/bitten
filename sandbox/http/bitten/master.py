@@ -24,8 +24,8 @@ import time
 from trac.config import BoolOption, IntOption
 from trac.core import *
 from trac.env import Environment
-from trac.web import IRequestHandler, HTTPMethodNotAllowed, HTTPNotFound, \
-                     RequestDone
+from trac.web import IRequestHandler, HTTPConflict, HTTPMethodNotAllowed, \
+                     HTTPNotFound, RequestDone
 
 from bitten.model import BuildConfig, Build, BuildStep, BuildLog, Report
 from bitten.queue import BuildQueue
@@ -140,10 +140,14 @@ class BuildMaster(Component):
         req.send(str(xml), 'application/x-bitten+xml', 200)
 
     def _process_build_step(self, req, config, build, stepname):
-        xml = xmlio.parse(config.recipe)
+        step = BuildStep.fetch(self.env, build=build.id, name=stepname)
+        if step:
+            raise HTTPConflict('Build step already exists')
+
+        recipe_xml = xmlio.parse(config.recipe)
         index = None
         step_elem = None
-        for num, elem in enumerate(xml.children('step')):
+        for num, elem in enumerate(recipe_xml.children('step')):
             if elem.attr['id'] == stepname:
                 index = num
                 step_elem = elem
@@ -168,6 +172,7 @@ class BuildMaster(Component):
         step.errors += [error.gettext() for error in elem.children('error')]
         step.insert(db=db)
 
+        # Collect log messages from the request body
         for idx, log_elem in enumerate(elem.children('log')):
             build_log = BuildLog(self.env, build=build.id, step=step.name,
                                  generator=log_elem.attr.get('generator'),
@@ -177,6 +182,7 @@ class BuildMaster(Component):
                                            message_elem.gettext()))
             build_log.insert(db=db)
 
+        # Collect report data from the request body
         for report_elem in elem.children('report'):
             report = Report(self.env, build=build.id, step=step.name,
                             category=report_elem.attr.get('category'),
@@ -189,14 +195,26 @@ class BuildMaster(Component):
                 report.items.append(item)
             report.insert(db=db)
 
+        # If this was the last step in the recipe we mark the build as
+        # completed
         if last_step:
             self.log.info('Slave %s completed build %d ("%s" as of [%s])',
                           build.slave, build.id, build.config, build.rev)
             build.stopped = step.stopped
-            # FIXME: determine whether the build has failed by inspecting the
-            #        step records and checking against the 'onerror' attribute
-            #        of the steps in the recipe??
-            build.status = Build.SUCCESS
+
+            # Determine overall outcome of the build by checking the outcome
+            # of the individual steps against the "onerror" specification of
+            # each step in the recipe
+            for num, elem in enumerate(recipe_xml.children('step')):
+                step = BuildStep.fetch(self.env, build.id, elem.attr['id'])
+                if step.status == BuildStep.FAILURE:
+                    onerror = elem.attr.get('onerror', 'fail')
+                    if onerror != 'ignore':
+                        build.status = Build.FAILURE
+                        break
+            else:
+                build.status = Build.SUCCESS
+
             build.update(db=db)
 
         db.commit()
