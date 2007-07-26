@@ -65,22 +65,20 @@ class BuildMasterTestCase(unittest.TestCase):
         )
 
         inheaders = {'Content-Type': 'application/x-bitten+xml'}
-        outheaders = {}
-        body = StringIO("""<slave name="hal">
+        inbody = StringIO("""<slave name="hal">
   <platform>Power Macintosh</platform>
   <os family="posix" version="8.1.0">Darwin</os>
 </slave>""")
-        sent = []
-        def send(content, content_type, status_code):
-            sent[:] = [content, content_type, status_code]
-            raise RequestDone
+        outheaders = {}
+        outbody = StringIO()
         req = Mock(method='POST', base_path='', path_info='/builds',
                    href=Href('/trac'), abs_href=Href('http://example.org/trac'),
                    remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
-                   get_header=lambda x: inheaders.get(x), read=body.read,
-                   send_header=lambda x, y: outheaders.__setitem__(x, y),
-                   send=send)
+                   get_header=lambda x: inheaders.get(x), read=inbody.read,
+                   send_response=lambda x: outheaders.setdefault('Status', x),
+                   send_header=lambda x, y: outheaders.setdefault(x, y),
+                   write=outbody.write)
 
         module = BuildMaster(self.env)
         assert module.match_request(req)
@@ -88,10 +86,12 @@ class BuildMasterTestCase(unittest.TestCase):
             module.process_request(req)
             self.fail('Expected RequestDone')
         except RequestDone:
-            self.assertEqual(['Build pending', 'text/plain', 201], sent)
+            self.assertEqual(201, outheaders['Status'])
+            self.assertEqual('text/plain', outheaders['Content-Type'])
             location = outheaders['Location']
             mo = re.match('http://example.org/trac/builds/(\d+)', location)
             assert mo, 'Location was %r' % location
+            self.assertEqual('Build pending', outbody.getvalue())
             build = Build.fetch(self.env, int(mo.group(1)))
             self.assertEqual(Build.IN_PROGRESS, build.status)
             self.assertEqual('hal', build.slave)
@@ -110,19 +110,19 @@ class BuildMasterTestCase(unittest.TestCase):
 
     def test_create_build_no_match(self):
         inheaders = {'Content-Type': 'application/x-bitten+xml'}
-        buf = StringIO("""<slave name="hal">
+        inbody = StringIO("""<slave name="hal">
   <platform>Power Macintosh</platform>
   <os family="posix" version="8.1.0">Darwin</os>
 </slave>""")
-        sent = []
-        def send(content, content_type, status_code):
-            sent[:] = [content, content_type, status_code]
-            raise RequestDone
+        outheaders = {}
+        outbody = StringIO()
         req = Mock(method='POST', base_path='', path_info='/builds',
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
-                   get_header=lambda x: inheaders.get(x), read=buf.read,
-                   send=send)
+                   get_header=lambda x: inheaders.get(x), read=inbody.read,
+                   send_response=lambda x: outheaders.setdefault('Status', x),
+                   send_header=lambda x, y: outheaders.setdefault(x, y),
+                   write=outbody.write)
 
         module = BuildMaster(self.env)
         assert module.match_request(req)
@@ -130,7 +130,9 @@ class BuildMasterTestCase(unittest.TestCase):
             module.process_request(req)
             self.fail('Expected RequestDone')
         except RequestDone:
-            self.assertEqual(['No pending builds', 'text/plain', 204], sent)
+            self.assertEqual(204, outheaders['Status'])
+            self.assertEqual('text/plain', outheaders['Content-Type'])
+            self.assertEqual('No pending builds', outbody.getvalue())
 
     def test_no_such_build(self):
         req = Mock(method='GET', base_path='',
@@ -158,15 +160,15 @@ class BuildMasterTestCase(unittest.TestCase):
         build.insert()
 
         outheaders = {}
-        sent = []
-        def send(content, content_type, status_code):
-            sent[:] = [content, content_type, status_code]
-            raise RequestDone
+        outbody = StringIO()
+        
         req = Mock(method='GET', base_path='',
                    path_info='/builds/%d' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
-                   send_header=lambda x, y: outheaders.__setitem__(x, y),
-                   send=send, perm=PermissionCache(self.env, 'hal'))
+                   perm=PermissionCache(self.env, 'hal'),
+                   send_response=lambda x: outheaders.setdefault('Status', x),
+                   send_header=lambda x, y: outheaders.setdefault(x, y),
+                   write=outbody.write)
 
         module = BuildMaster(self.env)
         assert module.match_request(req)
@@ -174,9 +176,11 @@ class BuildMasterTestCase(unittest.TestCase):
             module.process_request(req)
             self.fail('Expected RequestDone')
         except RequestDone:
-            self.assertEqual(['application/x-bitten+xml', 200], sent[1:])
+            self.assertEqual(200, outheaders['Status'])
+            self.assertEqual('application/x-bitten+xml',
+                             outheaders['Content-Type'])
             self.assertEqual('<build path="somepath" revision="123"/>',
-                             sent[0])
+                             outbody.getvalue())
 
 
 def suite():

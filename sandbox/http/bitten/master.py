@@ -113,7 +113,10 @@ class BuildMaster(Component):
                     info[child.attr['name'] + '.' + name] = value
 
         if not self.queue.register_slave(info['name'], info):
-            req.send('No pending builds', 'text/plain', 204)
+            req.send_response(204)
+            req.send_header('Content-Type', 'text/plain')
+            req.write('No pending builds')
+            raise RequestDone
 
         # FIXME: this API should be changed, we no longer need to pass multiple
         #        slave names in, and get a selected slave name back
@@ -123,21 +126,29 @@ class BuildMaster(Component):
         build.status = Build.IN_PROGRESS
         build.update()
 
+        req.send_response(201)
+        req.send_header('Content-Type', 'text/plain')
         req.send_header('Location', req.abs_href.builds(build.id))
-        req.send('Build pending', 'text/plain', 201)
+        req.write('Build pending')
+        raise RequestDone
 
     def _process_build_initiation(self, req, config, build):
         build.started = int(time.time())
         build.update()
 
-        req.send_header('Content-Disposition',
-                        'attachment; filename=recipe_%s_r%s.xml' %
-                        (config.name, build.rev))
-
         xml = xmlio.parse(config.recipe)
         xml.attr['path'] = config.path
         xml.attr['revision'] = build.rev
-        req.send(str(xml), 'application/x-bitten+xml', 200)
+        body = str(xml)
+
+        req.send_response(200)
+        req.send_header('Content-Type', 'application/x-bitten+xml')
+        req.send_header('Content-Length', len(body))
+        req.send_header('Content-Disposition',
+                        'attachment; filename=recipe_%s_r%s.xml' %
+                        (config.name, build.rev))
+        req.write(body)
+        raise RequestDone
 
     def _process_build_step(self, req, config, build, stepname):
         step = BuildStep.fetch(self.env, build=build.id, name=stepname)
@@ -223,7 +234,9 @@ class BuildMaster(Component):
             for listener in BuildSystem(self.env).listeners:
                 listener.build_completed(build)
 
-        req.send('Build step processed', 'text/plain')
+        req.send_header('Content-Type', 'text/plain')
+        req.write('Build step processed')
+        raise RequestDone
 
     def _process_build_artifact(self, req, config, build, filename):
         raise NotImplementedError
