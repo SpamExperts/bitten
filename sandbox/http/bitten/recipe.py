@@ -174,6 +174,9 @@ class Step(object):
         self.description = elem.attr.get('description')
         self.onerror = elem.attr.get('onerror', 'fail')
 
+    def __repr__(self):
+        return '<%s %r>' % (type(self).__name__, self.id)
+
     def execute(self, ctxt):
         """Execute this step in the given context.
         

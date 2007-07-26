@@ -24,8 +24,8 @@ import time
 from trac.config import BoolOption, IntOption
 from trac.core import *
 from trac.env import Environment
-from trac.web import IRequestHandler, HTTPConflict, HTTPMethodNotAllowed, \
-                     HTTPNotFound, RequestDone
+from trac.web import IRequestHandler, HTTPConflict, HTTPForbidden, \
+                     HTTPMethodNotAllowed, HTTPNotFound, RequestDone
 
 from bitten.model import BuildConfig, Build, BuildStep, BuildLog, Report
 from bitten.queue import BuildQueue
@@ -159,9 +159,9 @@ class BuildMaster(Component):
         index = None
         current_step = None
         for num, recipe_step in enumerate(recipe):
-            if recipe_step == stepname:
+            if recipe_step.id == stepname:
                 index = num
-                current_step = elem
+                current_step = recipe_step
         if index is None:
             raise HTTPForbidden('No such build step')
         last_step = index == num
@@ -208,7 +208,8 @@ class BuildMaster(Component):
 
         # If this was the last step in the recipe we mark the build as
         # completed
-        if last_step or current_step.onerror == 'fail':
+        if last_step or step.status = BuildStep.FAILURE and \
+                current_step.onerror == 'fail':
             self.log.info('Slave %s completed build %d ("%s" as of [%s])',
                           build.slave, build.id, build.config, build.rev)
             build.stopped = step.stopped
