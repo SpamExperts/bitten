@@ -208,7 +208,7 @@ class BuildMaster(Component):
 
         # If this was the last step in the recipe we mark the build as
         # completed
-        if last_step or step.status = BuildStep.FAILURE and \
+        if last_step or step.status == BuildStep.FAILURE and \
                 current_step.onerror == 'fail':
             self.log.info('Slave %s completed build %d ("%s" as of [%s])',
                           build.slave, build.id, build.config, build.rev)
