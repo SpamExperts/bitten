@@ -234,6 +234,7 @@ class BuildMaster(Component):
             for listener in BuildSystem(self.env).listeners:
                 listener.build_completed(build)
 
+        req.send_response(200)
         req.send_header('Content-Type', 'text/plain')
         req.write('Build step processed')
         raise RequestDone
