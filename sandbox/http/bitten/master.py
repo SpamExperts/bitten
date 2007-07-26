@@ -155,13 +155,13 @@ class BuildMaster(Component):
         if step:
             raise HTTPConflict('Build step already exists')
 
-        recipe_xml = xmlio.parse(config.recipe)
+        recipe = Recipe(xmlio.parse(config.recipe))
         index = None
-        step_elem = None
-        for num, elem in enumerate(recipe_xml.children('step')):
+        rstep = None
+        for num, elem in enumerate(recipe):
             if elem.attr['id'] == stepname:
                 index = num
-                step_elem = elem
+                rstep = elem
         if index is None:
             raise HTTPForbidden('No such build step')
         last_step = index == num
@@ -208,7 +208,7 @@ class BuildMaster(Component):
 
         # If this was the last step in the recipe we mark the build as
         # completed
-        if last_step:
+        if last_step or rstep.onerror == 'fail':
             self.log.info('Slave %s completed build %d ("%s" as of [%s])',
                           build.slave, build.id, build.config, build.rev)
             build.stopped = step.stopped
@@ -216,11 +216,10 @@ class BuildMaster(Component):
             # Determine overall outcome of the build by checking the outcome
             # of the individual steps against the "onerror" specification of
             # each step in the recipe
-            for num, elem in enumerate(recipe_xml.children('step')):
-                step = BuildStep.fetch(self.env, build.id, elem.attr['id'])
+            for num, rstep in enumerate(recipe):
+                step = BuildStep.fetch(self.env, build.id, rstep.id)
                 if step.status == BuildStep.FAILURE:
-                    onerror = elem.attr.get('onerror', 'fail')
-                    if onerror != 'ignore':
+                    if rstep.onerror != 'ignore':
                         build.status = Build.FAILURE
                         break
             else:

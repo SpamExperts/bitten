@@ -122,10 +122,14 @@ class BuildSlave(object):
 
     def _execute_build(self, build_url, recipe):
         for step in recipe:
-            self._execute_step(build_url, recipe, step)
+            log.info('Executing build step "%s"', step.id)
+            if not self._execute_step(build_url, recipe, step):
+                log.warning('Stopping build due to failure')
+                break
+        else:
+            log.warning('Build completed')
 
     def _execute_step(self, build_url, recipe, step):
-        log.info('Executing build step "%s"', step.id)
         failed = False
         started = datetime.utcnow()
         xml = xmlio.Element('result', time=started.isoformat())
@@ -142,8 +146,7 @@ class BuildSlave(object):
             log.error('Build step %s failed (%s)', step.id, e)
             failed = True
         except Exception, e:
-            log.error('Internal error in build step %s',
-                      step.id, exc_info=True)
+            log.error('Internal error in build step %s', step.id, exc_info=True)
             failed = True
         xml.attr['duration'] = (datetime.utcnow() - started).seconds
         if failed:
@@ -159,6 +162,8 @@ class BuildSlave(object):
         })
         if resp.status != 200:
             log.error('Unexpected response (%d): %s', resp.status, resp.reason)
+
+        return not failed or step.onerror != 'fail'
 
 
 def main():
