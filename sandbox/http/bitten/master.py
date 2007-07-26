@@ -53,11 +53,6 @@ class BuildMaster(Component):
         """The time in seconds after which a build is cancelled if the slave
         does not report progress.""")
 
-    # Initialization
-
-    def __init__(self):
-        self.queue = BuildQueue(self.env, build_all=self.build_all)
-
     # IRequestHandler methods
 
     def match_request(self, req):
@@ -75,7 +70,6 @@ class BuildMaster(Component):
         if 'id' not in req.args:
             if req.method != 'POST':
                 raise HTTPMethodNotAllowed('Method not allowed')
-            self.queue.populate()
             return self._process_build_creation(req)
 
         build = Build.fetch(self.env, req.args['id'])
@@ -93,38 +87,36 @@ class BuildMaster(Component):
                                                 req.args['member'])
 
     def _process_build_creation(self, req):
+        queue = BuildQueue(self.env, build_all=self.build_all)
+        queue.populate()
+
         elem = xmlio.parse(req.read())
-        info = {'name': elem.attr['name'], Build.IP_ADDRESS: req.remote_addr}
-        self.log.info('Build slave %r connected from %s', info['name'],
-                      req.remote_addr)
+        name = elem.attr['name']
+        properties = {Build.IP_ADDRESS: req.remote_addr}
+        self.log.info('Build slave %r connected from %s', name, req.remote_addr)
 
         for child in elem.children():
             if child.name == 'platform':
-                info[Build.MACHINE] = child.gettext()
-                info[Build.PROCESSOR] = child.attr.get('processor')
+                properties[Build.MACHINE] = child.gettext()
+                properties[Build.PROCESSOR] = child.attr.get('processor')
             elif child.name == 'os':
-                info[Build.OS_NAME] = child.gettext()
-                info[Build.OS_FAMILY] = child.attr.get('family')
-                info[Build.OS_VERSION] = child.attr.get('version')
+                properties[Build.OS_NAME] = child.gettext()
+                properties[Build.OS_FAMILY] = child.attr.get('family')
+                properties[Build.OS_VERSION] = child.attr.get('version')
             elif child.name == 'package':
                 for name, value in child.attr.items():
                     if name == 'name':
                         continue
-                    info[child.attr['name'] + '.' + name] = value
+                    properties[child.attr['name'] + '.' + name] = value
 
-        if not self.queue.register_slave(info['name'], info):
+        # FIXME: this API should be changed, we no longer need to pass multiple
+        #        slave names in, and get a selected slave name back
+        build = queue.get_build_for_slave(name, properties)
+        if not build:
             req.send_response(204)
             req.send_header('Content-Type', 'text/plain')
             req.write('No pending builds')
             raise RequestDone
-
-        # FIXME: this API should be changed, we no longer need to pass multiple
-        #        slave names in, and get a selected slave name back
-        build, slave = self.queue.get_next_pending_build([info['name']])
-        build.slave = info['name']
-        build.slave_info.update(info)
-        build.status = Build.IN_PROGRESS
-        build.update()
 
         req.send_response(201)
         req.send_header('Content-Type', 'text/plain')
