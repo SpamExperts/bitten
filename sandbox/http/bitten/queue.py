@@ -202,7 +202,7 @@ class BuildQueue(object):
                                   rev_time=repos.get_changeset(rev).date)
                     builds.append(build)
                     break
-                elif not self.build_all:
+                if not self.build_all:
                     self.log.debug('Ignoring older revisions for configuration '
                                    '%r', config.name)
                     break

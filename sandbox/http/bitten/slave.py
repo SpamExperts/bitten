@@ -10,7 +10,7 @@
 """Implementation of the build slave."""
 
 from datetime import datetime
-import httplib2
+import httplib
 import logging
 import os
 import platform
@@ -21,6 +21,7 @@ except NameError:
 import shutil
 import tempfile
 import time
+import urlparse
 
 from bitten.build import BuildError
 from bitten.build.config import Configuration
@@ -62,8 +63,24 @@ class BuildSlave(object):
         self.work_dir = work_dir
         self.keep_files = keep_files
         self.single_build = single_build
-        self.client = httplib2.Http()
         self.running = False
+
+    def request(self, method, url, body=None, headers=None):
+        scheme, host, path, query, fragment = urlparse.urlsplit(url)
+        scheme = (scheme or 'http').lower()
+
+        if scheme == 'https':
+            conn = httplib.HTTPSConnection(host)
+        else:
+            conn = httplib.HTTPConnection(host)
+        if headers is None:
+            headers = {}
+        if body is None:
+            body = ''
+        headers['Content-Length'] = len(body)
+        conn.request(method.upper(), path, body, headers)
+        return conn.getresponse()
+
     def run(self):
         self.running = True
         while self.running:
@@ -88,23 +105,23 @@ class BuildSlave(object):
         for package, properties in self.config.packages.items():
             xml.append(xmlio.Element('package', name=package, **properties))
 
-        resp, content = self.client.request(self.url, 'POST', str(xml),
-                                                headers={
+        resp = self.request('POST', self.url, str(xml), {
             'Content-Type': 'application/x-bitten+xml'
         })
+
         if resp.status == 201:
-            self._initiate_build(resp['location'])
+            self._initiate_build(resp.getheader('location'))
         elif resp.status == 204:
-            log.info(content)
+            log.info(resp.read())
         else:
             log.error('Unexpected response (%d): %s', resp.status, resp.reason)
 
     def _initiate_build(self, build_url):
         build_id = int(build_url.split('/')[-1])
-        log.info('Build pending: %s' % build_id)
-        resp, content = self.client.request(build_url, 'GET')
+        log.info('Build %s pending at %s', build_id, build_url)
+        resp = self.request('GET', build_url)
         if resp.status == 200:
-            xml = xmlio.parse(content)
+            xml = xmlio.parse(resp)
             basedir = os.path.join(self.work_dir, 'build_%d' % build_id)
             if not os.path.exists(basedir):
                 os.mkdir(basedir)
@@ -156,8 +173,7 @@ class BuildSlave(object):
             xml.attr['status'] = 'success'
             log.info('Build step %s completed successfully', step.id)
 
-        resp, content = self.client.request(build_url + '/steps/' + step.id,
-                                            'PUT', str(xml), headers={
+        resp = self.request('PUT', build_url + '/steps/' + step.id, str(xml), {
             'Content-Type': 'application/x-bitten+xml'
         })
         if resp.status != 200:
