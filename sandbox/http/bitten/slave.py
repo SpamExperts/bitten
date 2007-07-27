@@ -19,6 +19,7 @@ try:
 except NameError:
     from sets import Set as set
 import shutil
+import socket
 import tempfile
 import time
 import urlparse
@@ -63,7 +64,6 @@ class BuildSlave(object):
         self.work_dir = work_dir
         self.keep_files = keep_files
         self.single_build = single_build
-        self.running = False
 
     def request(self, method, url, body=None, headers=None):
         scheme, host, path, query, fragment = urlparse.urlsplit(url)
@@ -73,6 +73,7 @@ class BuildSlave(object):
             conn = httplib.HTTPSConnection(host)
         else:
             conn = httplib.HTTPConnection(host)
+
         if headers is None:
             headers = {}
         if body is None:
@@ -82,14 +83,20 @@ class BuildSlave(object):
         return conn.getresponse()
 
     def run(self):
-        self.running = True
-        while self.running:
-            self._create_build()
+        while True:
+            try:
+                try:
+                    self._create_build()
+                except socket.error, e:
+                    log.error(e)
+                    raise ExitSlave()
+            except ExitSlave:
+                break
             time.sleep(30)
 
     def quit(self):
-        self.running = False
         log.info('Shutting down')
+        raise ExitSlave()
 
     def _create_build(self):
         xml = xmlio.Element('slave', name=self.name)[
@@ -101,11 +108,15 @@ class BuildSlave(object):
                 self.config['os']
             ],
         ]
-        log.debug('Packages: %s', self.config.packages)
+
+        log.debug('Configured packages: %s', self.config.packages)
         for package, properties in self.config.packages.items():
             xml.append(xmlio.Element('package', name=package, **properties))
 
-        resp = self.request('POST', self.url, str(xml), {
+        body = str(xml)
+        log.debug('Sending slave configuration: %s', body)
+        resp = self.request('POST', self.url, body, {
+            'Content-Length': len(body),
             'Content-Type': 'application/x-bitten+xml'
         })
 
@@ -115,6 +126,7 @@ class BuildSlave(object):
             log.info(resp.read())
         else:
             log.error('Unexpected response (%d): %s', resp.status, resp.reason)
+            raise ExitSlave()
 
     def _initiate_build(self, build_url):
         build_id = int(build_url.split('/')[-1])
@@ -130,12 +142,14 @@ class BuildSlave(object):
                 self._execute_build(build_url, recipe)
             finally:
                 if not self.keep_files:
+                    log.debug('Removing build directory %s' % basedir)
                     shutil.rmtree(basedir)
                 if self.single_build:
                     log.info('Exiting after single build completed.')
-                    self.quit()
+                    raise ExitSlave()
         else:
             log.error('Unexpected response (%d): %s', resp.status, resp.reason)
+            raise ExitSlave()
 
     def _execute_build(self, build_url, recipe):
         for step in recipe:
@@ -180,6 +194,11 @@ class BuildSlave(object):
             log.error('Unexpected response (%d): %s', resp.status, resp.reason)
 
         return not failed or step.onerror != 'fail'
+
+
+class ExitSlave(Exception):
+    """Exception used internally by the slave to signal that the slave process
+    should be stopped."""
 
 
 def main():
@@ -239,11 +258,15 @@ def main():
                        keep_files=options.keep_files,
                        single_build=options.single_build)
     try:
-        slave.run()
-    except KeyboardInterrupt:
-        slave.quit()
+        try:
+            slave.run()
+        except KeyboardInterrupt:
+            slave.quit()
+    except ExitSlave:
+        pass
 
-    if not options.keep_files and os.path.isdir(slave.work_dir):
+    if not options.work_dir:
+        log.debug('Removing temporary directory %s' % slave.work_dir)
         shutil.rmtree(slave.work_dir)
 
 if __name__ == '__main__':
