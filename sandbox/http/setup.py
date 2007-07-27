@@ -58,6 +58,7 @@ setup(
             NS + 'python#trace = bitten.build.pythontools:trace',
             NS + 'python#unittest = bitten.build.pythontools:unittest',
             NS + 'svn#checkout = bitten.build.svntools:checkout',
+            NS + 'svn#export = bitten.build.svntools:export',
             NS + 'svn#update = bitten.build.svntools:update',
             NS + 'xml#transform = bitten.build.xmltools:transform'
         ]

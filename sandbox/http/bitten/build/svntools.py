@@ -35,6 +35,27 @@ def checkout(ctxt, url, path=None, revision=None):
     if returncode != 0:
         ctxt.error('svn checkout failed (%s)' % returncode)
 
+def export(ctxt, url, path=None, revision=None):
+    """Perform an export from a Subversion repository.
+    
+    @param ctxt: the build context
+    @type ctxt: an instance of L{bitten.recipe.Context}
+    @param url: the URL of the repository
+    @param path: the path inside the repository
+    @param revision: the revision to check out
+    """
+    args = ['export', '--force']
+    if revision:
+        args += ['-r', revision]
+    if path:
+        url = posixpath.join(url, path)
+    args += [url, '.']
+
+    from bitten.build import shtools
+    returncode = shtools.execute(ctxt, file_='svn', args=args)
+    if returncode != 0:
+        ctxt.error('svn export failed (%s)' % returncode)
+
 def update(ctxt, revision=None):
     """Update the local working copy from the Subversion repository.
     
