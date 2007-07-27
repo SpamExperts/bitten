@@ -169,8 +169,9 @@ class BuildQueue(object):
                         match = False
                         break
                 if match:
-                    self.log.debug('Slave %s matched target platform "%s"',
-                                   name, platform.name)
+                    self.log.debug('Slave %s matched target platform %r of '
+                                   'build configuration %r', name,
+                                   platform.name, config.name)
                     platforms.append(platform)
 
         return platforms
