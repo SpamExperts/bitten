@@ -56,7 +56,8 @@ class BuildMaster(Component):
     # IRequestHandler methods
 
     def match_request(self, req):
-        match = re.match(r'/builds(?:/(\d+)(?:/(\w+)/([^/]+))?)?$', req.path_info)
+        match = re.match(r'/builds(?:/(\d+)(?:/(\w+)/([^/]+))?)?$',
+                         req.path_info)
         if match:
             if match.group(1):
                 req.args['id'] = match.group(1)
@@ -109,8 +110,6 @@ class BuildMaster(Component):
                         continue
                     properties[child.attr['name'] + '.' + name] = value
 
-        # FIXME: this API should be changed, we no longer need to pass multiple
-        #        slave names in, and get a selected slave name back
         build = queue.get_build_for_slave(name, properties)
         if not build:
             req.send_response(204)

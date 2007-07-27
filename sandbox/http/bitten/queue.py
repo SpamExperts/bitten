@@ -111,32 +111,39 @@ class BuildQueue(object):
         """
         log.debug('Checking for pending builds...')
 
+        db = self.env.get_db_cnx()
         repos = self.env.get_repository()
+
         self.reset_orphaned_builds()
 
-        # delete any obsolete builds
+        # Iterate through pending builds by descending revision timestamp, to
+        # avoid the first configuration/platform getting all the builds
+        platforms = [p.id for p in self.match_slave(name, properties)]
+        build = None
         builds_to_delete = []
-        try:
-            for build in Build.select(self.env, status=Build.PENDING):
-                if self.should_delete_build(build, repos):
-                   builds_to_delete.append(build)
-        finally:
-            db = self.env.get_db_cnx()
-            for build in builds_to_delete:
-                build.delete(db=db)
+        for build in Build.select(self.env, status=Build.PENDING, db=db):
+            if self.should_delete_build(build, repos):
+               builds_to_delete.append(build)
+            elif build.platform in platforms:
+                break
+        else:
+            self.log.debug('No pending builds.')
+            return None
 
-        for platform in self.match_slave(name, properties):
-            for build in Build.select(self.env, platform.config,
-                                      platform=platform.id,
-                                      status=Build.PENDING):
-                build.slave = name
-                build.slave_info.update(properties)
-                build.status = Build.IN_PROGRESS
-                build.update()
-                return build
+        # delete any obsolete builds
+        for build in builds_to_delete:
+            build.delete(db=db)
 
-        self.log.debug('No pending builds.')
-        return None
+        if build:
+            build.slave = name
+            build.slave_info.update(properties)
+            build.status = Build.IN_PROGRESS
+            build.update(db=db)
+
+        if build or builds_to_delete:
+            db.commit()
+
+        return build
 
     def match_slave(self, name, properties):
         """Match a build slave against available target platforms.
