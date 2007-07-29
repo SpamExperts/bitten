@@ -153,7 +153,7 @@ class BuildSlave(object):
 
     def _execute_build(self, build_url, recipe):
         for step in recipe:
-            log.info('Executing build step "%s"', step.id)
+            log.info('Executing build step %r', step.id)
             if not self._execute_step(build_url, recipe, step):
                 log.warning('Stopping build due to failure')
                 break
@@ -174,15 +174,15 @@ class BuildSlave(object):
                     output
                 ])
         except BuildError, e:
-            log.error('Build step %s failed (%s)', step.id, e)
+            log.error('Build step %r failed (%s)', step.id, e)
             failed = True
         except Exception, e:
-            log.error('Internal error in build step %s', step.id, exc_info=True)
+            log.error('Internal error in build step %r', step.id, exc_info=True)
             failed = True
         xml.attr['duration'] = (datetime.utcnow() - started).seconds
         if failed:
             xml.attr['status'] = 'failure'
-            log.warning('Build step %s failed', step.id)
+            log.warning('Build step %r failed', step.id)
         else:
             xml.attr['status'] = 'success'
             log.info('Build step %s completed successfully', step.id)
