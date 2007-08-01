@@ -213,7 +213,7 @@ class BuildMasterTestCase(unittest.TestCase):
         build = Build(self.env, 'test', '123', 1, slave='hal', rev_time=42)
         build.insert()
 
-        req = Mock(method='POST', base_path='',
+        req = Mock(method='PUT', base_path='',
                    path_info='/builds/%d/files/abc.zip' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'))
@@ -243,7 +243,7 @@ class BuildMasterTestCase(unittest.TestCase):
 </result>""")
         outheaders = {}
         outbody = StringIO()
-        req = Mock(method='POST', base_path='',
+        req = Mock(method='PUT', base_path='',
                    path_info='/builds/%d/steps/foo' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
@@ -293,7 +293,7 @@ class BuildMasterTestCase(unittest.TestCase):
 </result>""")
         outheaders = {}
         outbody = StringIO()
-        req = Mock(method='POST', base_path='',
+        req = Mock(method='PUT', base_path='',
                    path_info='/builds/%d/steps/foo' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
@@ -353,7 +353,7 @@ class BuildMasterTestCase(unittest.TestCase):
 </result>""")
         outheaders = {}
         outbody = StringIO()
-        req = Mock(method='POST', base_path='',
+        req = Mock(method='PUT', base_path='',
                    path_info='/builds/%d/steps/foo' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
@@ -412,7 +412,7 @@ class BuildMasterTestCase(unittest.TestCase):
 </result>""")
         outheaders = {}
         outbody = StringIO()
-        req = Mock(method='POST', base_path='',
+        req = Mock(method='PUT', base_path='',
                    path_info='/builds/%d/steps/foo' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
@@ -458,7 +458,7 @@ class BuildMasterTestCase(unittest.TestCase):
 </result>""")
         outheaders = {}
         outbody = StringIO()
-        req = Mock(method='POST', base_path='',
+        req = Mock(method='PUT', base_path='',
                    path_info='/builds/%d/steps/foo' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
@@ -499,7 +499,7 @@ class BuildMasterTestCase(unittest.TestCase):
         build.insert()
 
         inbody = StringIO("""<result></rsleut>""")
-        req = Mock(method='POST', base_path='',
+        req = Mock(method='PUT', base_path='',
                    path_info='/builds/%d/steps/foo' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
@@ -528,7 +528,7 @@ class BuildMasterTestCase(unittest.TestCase):
                                      time="sometime tomorrow maybe"
                                      duration="3.45">
 </result>""")
-        req = Mock(method='POST', base_path='',
+        req = Mock(method='PUT', base_path='',
                    path_info='/builds/%d/steps/foo' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'),
@@ -543,14 +543,14 @@ class BuildMasterTestCase(unittest.TestCase):
             self.assertEqual("Invalid ISO date/time 'sometime tomorrow maybe'",
                              e.detail)
 
-    def test_process_build_step_no_post(self):
+    def test_process_build_step_no_put(self):
         BuildConfig(self.env, 'test', path='somepath', active=True,
                     recipe='<build></build>').insert()
         build = Build(self.env, 'test', '123', 1, slave='hal', rev_time=42,
                       started=42)
         build.insert()
 
-        req = Mock(method='GET', base_path='',
+        req = Mock(method='POST', base_path='',
                    path_info='/builds/%d/steps/foo' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
                    perm=PermissionCache(self.env, 'hal'))

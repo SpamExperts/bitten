@@ -82,7 +82,7 @@ class BuildMaster(Component):
         if not req.args['collection']:
             return self._process_build_initiation(req, config, build)
 
-        if req.method != 'POST':
+        if req.method != 'PUT':
             raise HTTPMethodNotAllowed('Method not allowed')
 
         if req.args['collection'] == 'steps':
