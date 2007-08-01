@@ -24,8 +24,9 @@ import time
 from trac.config import BoolOption, IntOption
 from trac.core import *
 from trac.env import Environment
-from trac.web import IRequestHandler, HTTPConflict, HTTPForbidden, \
-                     HTTPMethodNotAllowed, HTTPNotFound, RequestDone
+from trac.web import IRequestHandler, HTTPBadRequest, HTTPConflict, \
+                     HTTPForbidden, HTTPMethodNotAllowed, HTTPNotFound, \
+                     RequestDone
 
 from bitten.model import BuildConfig, Build, BuildStep, BuildLog, Report
 from bitten.queue import BuildQueue
@@ -80,18 +81,25 @@ class BuildMaster(Component):
 
         if not req.args['collection']:
             return self._process_build_initiation(req, config, build)
-        elif req.args['collection'] == 'steps':
+
+        if req.method != 'POST':
+            raise HTTPMethodNotAllowed('Method not allowed')
+
+        if req.args['collection'] == 'steps':
             return self._process_build_step(req, config, build,
                                             req.args['member'])
-        elif req.args['collection'] == 'files':
-            return self._process_build_artifact(req, config, build,
-                                                req.args['member'])
+        else:
+            raise HTTPNotFound('No such collection')
 
     def _process_build_creation(self, req):
         queue = BuildQueue(self.env, build_all=self.build_all)
         queue.populate()
 
-        elem = xmlio.parse(req.read())
+        try:
+            elem = xmlio.parse(req.read())
+        except xmlio.ParseError, e:
+            raise HTTPBadRequest('XML parser error')
+
         name = elem.attr['name']
         properties = {Build.IP_ADDRESS: req.remote_addr}
         self.log.info('Build slave %r connected from %s', name, req.remote_addr)
@@ -134,7 +142,7 @@ class BuildMaster(Component):
 
         req.send_response(200)
         req.send_header('Content-Type', 'application/x-bitten+xml')
-        req.send_header('Content-Length', len(body))
+        req.send_header('Content-Length', str(len(body)))
         req.send_header('Content-Disposition',
                         'attachment; filename=recipe_%s_r%s.xml' %
                         (config.name, build.rev))
@@ -157,15 +165,22 @@ class BuildMaster(Component):
             raise HTTPForbidden('No such build step')
         last_step = index == num
 
-        elem = xmlio.parse(req.read())
+        try:
+            elem = xmlio.parse(req.read())
+        except xmlio.ParseError, e:
+            raise HTTPBadRequest('XML parser error')
+
         self.log.debug('Slave %s completed step %d (%s) with status %s',
                        build.slave, index, stepname, elem.attr['status'])
 
         db = self.env.get_db_cnx()
 
         step = BuildStep(self.env, build=build.id, name=stepname)
-        step.started = int(_parse_iso_datetime(elem.attr['time']))
-        step.stopped = step.started + int(elem.attr['duration'])
+        try:
+            step.started = int(_parse_iso_datetime(elem.attr['time']))
+            step.stopped = step.started + float(elem.attr['duration'])
+        except ValueError, e:
+            raise HTTPBadRequest(e.args[0])
         if elem.attr['status'] == 'failure':
             self.log.warning('Build %s step %s failed', build.id, stepname)
             step.status = BuildStep.FAILURE
@@ -225,13 +240,12 @@ class BuildMaster(Component):
             for listener in BuildSystem(self.env).listeners:
                 listener.build_completed(build)
 
+        body = 'Build step processed'
         req.send_response(200)
         req.send_header('Content-Type', 'text/plain')
-        req.write('Build step processed')
+        req.send_header('Content-Length', str(len(body)))
+        req.write(body)
         raise RequestDone
-
-    def _process_build_artifact(self, req, config, build, filename):
-        raise NotImplementedError
 
 
 def _parse_iso_datetime(string):
@@ -243,4 +257,4 @@ def _parse_iso_datetime(string):
         string = string.split('.', 1)[0] # strip out microseconds
         return calendar.timegm(time.strptime(string, '%Y-%m-%dT%H:%M:%S'))
     except ValueError, e:
-        raise ValueError('Invalid ISO date/time %s (%s)' % (string, e))
+        raise ValueError('Invalid ISO date/time %r' % string)
