@@ -173,14 +173,14 @@ class TestCoverageAnnotator(Component):
     >>> def annotate_row(lineno, line):
     ...     row = tag.tr()
     ...     ann.annotate_row(context, row, lineno, line, data)
-    ...     return row.generate().render('html')
+    ...     return unicode(row.generate().render('html'))
 
     >>> annotate_row(1, 'x = 1')
-    '<tr><th class="covered">5</th></tr>'
+    u'<tr><th class="covered">5</th></tr>'
     >>> annotate_row(2, '')
-    '<tr><th></th></tr>'
+    u'<tr><th></th></tr>'
     >>> annotate_row(3, 'y = x')
-    '<tr><th class="uncovered">0</th></tr>'
+    u'<tr><th class="uncovered">0</th></tr>'
     """
     implements(IRequestFilter, IHTMLPreviewAnnotator)
 
