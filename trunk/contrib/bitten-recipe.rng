@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<grammar xmlns="http://relaxng.org/ns/structure/1.0"
+	 xmlns:c="http://bitten.edgewall.org/tools/c"
+	 xmlns:hg="http://bitten.edgewall.org/tools/hg"
+	 xmlns:java="http://bitten.edgewall.org/tools/java"
+	 xmlns:mono="http://bitten.edgewall.org/tools/mono"
+	 xmlns:php="http://bitten.edgewall.org/tools/php"
+	 xmlns:python="http://bitten.edgewall.org/tools/python"
+	 xmlns:sh="http://bitten.edgewall.org/tools/sh"
+	 xmlns:svn="http://bitten.edgewall.org/tools/svn"
+	 xmlns:x="http://bitten.edgewall.org/tools/xml">
+
+  <start>
+    <element name="build">
+      <oneOrMore>
+	<ref name="step"/>
+      </oneOrMore>
+    </element>
+  </start>
+
+  <define name="step">
+    <element name="step">
+      <attribute name="id"><text/></attribute>
+      <optional><attribute name="description"><text/></attribute></optional>
+      <optional><attribute name="onerror">
+	<choice>
+	  <value>fail</value>
+	  <value>continue</value>
+	  <value>ignore</value>
+	</choice>
+      </attribute></optional>
+      <oneOrMore>
+	<ref name="action"/>
+      </oneOrMore>
+    </element>
+  </define>
+
+  <define name="bool">
+    <choice>
+      <value>False</value>
+      <value>True</value>
+    </choice>
+  </define>
+
+  <define name="action">
+    <choice>
+      <element name="report">
+	<optional><attribute name="category"><text/></attribute></optional>
+	<optional><attribute name="file"><text/></attribute></optional>
+      </element>
+      <element name="attach">
+	<optional><attribute name="file"><text/></attribute></optional>
+	<optional><attribute name="resource"><text/></attribute></optional>
+	<optional><attribute name="description"><text/></attribute></optional>
+      </element>
+
+      <element name="sh:exec">
+	<optional><attribute name="executable"><text/></attribute></optional>
+	<optional><attribute name="file"><text/></attribute></optional>
+	<optional><attribute name="output"><text/></attribute></optional>
+	<optional><attribute name="args"><text/></attribute></optional>
+	<optional><attribute name="dir"><text/></attribute></optional>
+	<optional><attribute name="timeout"><text/></attribute></optional>
+      </element>
+      <element name="sh:pipe">
+	<optional><attribute name="executable"><text/></attribute></optional>
+	<optional><attribute name="file"><text/></attribute></optional>
+	<optional><attribute name="input"><text/></attribute></optional>
+	<optional><attribute name="output"><text/></attribute></optional>
+	<optional><attribute name="args"><text/></attribute></optional>
+	<optional><attribute name="dir"><text/></attribute></optional>
+      </element>
+
+      <element name="c:autoreconf">
+	<optional><attribute name="force"><text/></attribute></optional>
+	<optional><attribute name="install"><text/></attribute></optional>
+	<optional><attribute name="symlink"><text/></attribute></optional>
+	<optional><attribute name="warnings"><text/></attribute></optional>
+	<optional><attribute name="prepend_include"><text/></attribute></optional>
+	<optional><attribute name="include"><text/></attribute></optional>
+      </element>
+      <element name="c:configure">
+	<optional><attribute name="file"><text/></attribute></optional>
+	<optional><attribute name="enable"><text/></attribute></optional>
+	<optional><attribute name="disable"><text/></attribute></optional>
+	<optional><attribute name="with"><text/></attribute></optional>
+	<optional><attribute name="without"><text/></attribute></optional>
+	<optional><attribute name="cflags"><text/></attribute></optional>
+	<optional><attribute name="cxxflags"><text/></attribute></optional>
+      </element>
+      <element name="c:gcov">
+	<optional><attribute name="include"><text/></attribute></optional>
+	<optional><attribute name="exclude"><text/></attribute></optional>
+	<optional><attribute name="prefix"><text/></attribute></optional>
+	<!-- undocumented attribute -->
+	<optional><attribute name="root"><text/></attribute></optional>
+      </element>
+      <element name="c:make">
+	<optional><attribute name="target"><text/></attribute></optional>
+	<optional><attribute name="file"><text/></attribute></optional>
+	<optional><attribute name="keep-going"><text/></attribute></optional>
+	<optional><attribute name="jobs"><text/></attribute></optional>
+	<optional><attribute name="directory"><text/></attribute></optional>
+	<optional><attribute name="args"><text/></attribute></optional>
+      </element>
+      <element name="c:cppunit">
+	<optional><attribute name="file"><text/></attribute></optional>
+      </element>
+
+      <element name="java:ant">
+	<optional><attribute name="file"><text/></attribute></optional>
+	<optional><attribute name="target"><text/></attribute></optional>
+	<optional><attribute name="args"><text/></attribute></optional>
+	<!-- c:make uses dash, java:ant uses underscore. Why? -->
+	<optional><attribute name="keep_going"><text/></attribute></optional>
+      </element>
+      <element name="java:cobertura">
+	<optional><attribute name="file"><text/></attribute></optional>
+      </element>
+      <element name="java:junit">
+	<optional><attribute name="file"><text/></attribute></optional>
+	<optional><attribute name="srcdir"><text/></attribute></optional>
+      </element>
+
+      <element name="mono:nunit">
+	<optional><attribute name="file"><text/></attribute></optional>
+      </element>
+
+      <element name="php:phing">
+	<optional><attribute name="file"><text/></attribute></optional>
+	<optional><attribute name="target"><text/></attribute></optional>
+	<optional><attribute name="args"><text/></attribute></optional>
+	<optional><attribute name="executable"><text/></attribute></optional>
+      </element>
+      <element name="php:phpunit">
+	<optional><attribute name="file"><text/></attribute></optional>
+      </element>
+      <element name="php:coverage">
+	<optional><attribute name="file"><text/></attribute></optional>
+      </element>
+
+      <element name="python:exec">
+	<optional><attribute name="file"><text/></attribute></optional>
+	<optional><attribute name="module"><text/></attribute></optional>
+	<optional><attribute name="function"><text/></attribute></optional>
+	<optional><attribute name="args"><text/></attribute></optional>
+	<optional><attribute name="output"><text/></attribute></optional>
+	<optional><attribute name="timeout"><text/></attribute></optional>
+      </element>
+      <element name="python:distutils">
+	<optional><attribute name="command"><text/></attribute></optional>
+	<optional><attribute name="options"><text/></attribute></optional>
+	<optional><attribute name="timeout"><text/></attribute></optional>
+      </element>
+      <element name="python:unittest">
+	<attribute name="file"><text/></attribute>
+      </element>
+      <element name="python:trace">
+	<optional><attribute name="summary"><text/></attribute></optional>
+	<optional><attribute name="coverdir"><text/></attribute></optional>
+	<optional><attribute name="include"><text/></attribute></optional>
+	<optional><attribute name="exclude"><text/></attribute></optional>
+      </element>
+      <element name="python:coverage">
+	<optional><attribute name="summary"><text/></attribute></optional>
+	<optional><attribute name="coverdir"><text/></attribute></optional>
+	<optional><attribute name="include"><text/></attribute></optional>
+	<optional><attribute name="exclude"><text/></attribute></optional>
+      </element>
+      <element name="python:figleaf">
+	<optional><attribute name="summary"><text/></attribute></optional>
+	<optional><attribute name="include"><text/></attribute></optional>
+	<optional><attribute name="exclude"><text/></attribute></optional>
+      </element>
+      <element name="python:pylint">
+	<attribute name="file"><text/></attribute>
+      </element>
+
+      <element name="svn:checkout">
+	<attribute name="url"><text/></attribute>
+	<attribute name="path"><text/></attribute>
+	<attribute name="revision"><text/></attribute>
+	<optional><attribute name="dir"><text/></attribute></optional>
+	<optional><attribute name="verbose"><ref name="bool"/></attribute></optional>
+	<optional><attribute name="shared_path"><text/></attribute></optional>
+	<optional><attribute name="username"><text/></attribute></optional>
+	<optional><attribute name="password"><text/></attribute></optional>
+	<optional><attribute name="no_auth_cache"><ref name="bool"/></attribute></optional>
+      </element>
+      <element name="svn:export">
+	<attribute name="url"><text/></attribute>
+	<attribute name="path"><text/></attribute>
+	<attribute name="revision"><text/></attribute>
+	<optional><attribute name="dir"><text/></attribute></optional>
+	<optional><attribute name="username"><text/></attribute></optional>
+	<optional><attribute name="password"><text/></attribute></optional>
+	<optional><attribute name="no_auth_cache"><text/></attribute></optional>
+      </element>
+      <element name="svn:update">
+	<attribute name="revision"><text/></attribute>
+	<optional><attribute name="dir"><text/></attribute></optional>
+	<optional><attribute name="username"><text/></attribute></optional>
+	<optional><attribute name="password"><text/></attribute></optional>
+	<optional><attribute name="no_auth_cache"><text/></attribute></optional>
+      </element>
+
+      <element name="x:transform">
+	<attribute name="src"><text/></attribute>
+	<attribute name="dest"><text/></attribute>
+	<attribute name="stylesheet"><text/></attribute>
+      </element>
+
+      <element name="hg:pull">
+	<optional><attribute name="revision"><text/></attribute></optional>
+	<optional><attribute name="dir"><text/></attribute></optional>
+      </element>
+    </choice>
+  </define>
+</grammar>
