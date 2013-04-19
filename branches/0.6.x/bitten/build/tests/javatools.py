@@ -262,8 +262,8 @@ class JUnitTestCase(unittest.TestCase):
         f2 = self._create_file('junit2.xml', content=self.xml_template2)
         javatools.junit(self.ctxt, file_=f2)
         type2, category2, generator2, xml2 = self.ctxt.output.pop()
-        self.assertEqual('report', type1)
-        self.assertEqual('test', category1)
+        self.assertEqual('report', type2)
+        self.assertEqual('test', category2)
         # compare
         for i in range(2):
             self.assertEquals(xml1.children[i].name, xml2.children[i].name)
