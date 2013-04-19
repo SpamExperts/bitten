@@ -136,36 +136,46 @@ def junit(ctxt, file_=None, srcdir=None):
         for path in glob(ctxt.resolve(file_)):
             fileobj = file(path, 'r')
             try:
-                for testcase in xmlio.parse(fileobj).children('testcase'):
-                    test = xmlio.Element('test')
-                    test.attr['fixture'] = testcase.attr['classname']
-                    test.attr['name'] = testcase.attr['name']
-                    if 'time' in testcase.attr:
-                        test.attr['duration'] = testcase.attr['time']
-                    if srcdir is not None:
-                        cls = testcase.attr['classname'].split('.')
-                        test.attr['file'] = posixpath.join(srcdir, *cls) + \
-                                            '.java'
-
-                    result = list(testcase.children())
-                    if result:
-                        junit_status = result[0].name
-                        test.append(xmlio.Element('traceback')[_fix_traceback(result)])
-                        if junit_status == 'skipped':
-                            test.attr['status'] = 'ignore'
-                        elif junit_status == 'error':
-                            test.attr['status'] = 'error'
-                            failed += 1
-                        else:
-                            test.attr['status'] = 'failure'
-                            failed += 1
-                    else:
-                        test.attr['status'] = 'success'
-
-                    results.append(test)
-                    total += 1
+                output = xmlio.parse(fileobj)
             finally:
                 fileobj.close()
+            if output.name == 'testsuites':
+                # top level wrapper for testsuites
+                testcases = []
+                for t_suite in output.children('testsuite'):
+                    testcases.extend([
+                            t_case for t_case in t_suite.children('testcase')])
+            else:
+                testcases = [t_case for t_case in output.children('testcase')]
+            for testcase in testcases:
+                test = xmlio.Element('test')
+                test.attr['fixture'] = testcase.attr['classname']
+                test.attr['name'] = testcase.attr['name']
+                if 'time' in testcase.attr:
+                    test.attr['duration'] = testcase.attr['time']
+                if srcdir is not None:
+                    cls = testcase.attr['classname'].split('.')
+                    test.attr['file'] = posixpath.join(srcdir, *cls) + \
+                                        '.java'
+
+                result = list(testcase.children())
+                if result:
+                    junit_status = result[0].name
+                    test.append(xmlio.Element('traceback')[
+                                                    _fix_traceback(result)])
+                    if junit_status == 'skipped':
+                        test.attr['status'] = 'ignore'
+                    elif junit_status == 'error':
+                        test.attr['status'] = 'error'
+                        failed += 1
+                    else:
+                        test.attr['status'] = 'failure'
+                        failed += 1
+                else:
+                    test.attr['status'] = 'success'
+
+                results.append(test)
+                total += 1
         if failed:
             ctxt.error('%d of %d test%s failed' % (failed, total,
                        total != 1 and 's' or ''))

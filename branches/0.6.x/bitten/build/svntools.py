@@ -90,9 +90,9 @@ def checkout(ctxt, url, path=None, revision=None, dir_='.', verbose='false', sha
         final_url = posixpath.join(url, path.lstrip('/'))
     else:
         final_url = url
-    if username:
+    if username is not None:
         args += ['--username', username]
-    if password:
+    if password is not None:
         args += ['--password', password]
     if no_auth_cache.lower() == 'true':
         args += ['--no-auth-cache']
@@ -135,9 +135,9 @@ def export(ctxt, url, path=None, revision=None, dir_='.',
         args += ['-r', revision]
     if path:
         url = posixpath.join(url, path)
-    if username:
+    if username is not None:
         args += ['--username', username]
-    if password:
+    if password is not None:
         args += ['--password', password]
     if no_auth_cache.lower() == 'true':
         args += ['--no-auth-cache']
@@ -163,9 +163,9 @@ def update(ctxt, revision=None, dir_='.',
     args = ['update']
     if revision:
         args += ['-r', revision]
-    if username:
+    if username is not None:
         args += ['--username', username]
-    if password:
+    if password is not None:
         args += ['--password', password]
     if no_auth_cache.lower() == 'true':
         args += ['--no-auth-cache']

@@ -120,18 +120,59 @@ class CoberturaTestCase(unittest.TestCase):
         self.assertEqual(0, elem.attr['lines'])
         self.assertEqual(0, elem.attr['percentage'])
 
-class PyTestTestCase(unittest.TestCase):
+class JUnitTestCase(unittest.TestCase):
     xml_template = """<testsuite name="%(name)s" errors="%(errors)d"
         failures="%(failures)d" skips="%(skips)d" tests="%(tests)d" time="%(time)f">
     %(body)s
 </testsuite>
 """
+    # <testsuite> top level
+    xml_template1 = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Vector" tests="2" failures="0" disabled="0" errors="0" time="0.001">
+    <properties>
+      <property name="javacDebug" value="false" />
+    </properties>
+  <testcase name="Static" status="run" time="0" classname="Vector" />
+  <testcase name="Dynamic" status="run" time="0" classname="Vector" />
+  <testcase name="Proxy" status="run" time="0" classname="Vector" />
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>"""
+    # <testsuites> top level
+    xml_template2 = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="3" failures="0" disabled="0" errors="0" time="0.002" name="AllTests">
+  <testsuite name="Vector" tests="2" failures="0" disabled="0" errors="0" time="0.001">
+    <testcase name="Static" status="run" time="0" classname="Vector" />
+    <testcase name="Dynamic" status="run" time="0" classname="Vector" />
+  </testsuite>
+  <testsuite name="Vector" tests="1" failures="0" disabled="0" errors="0" time="0.001">
+    <properties>
+      <property name="javacDebug" value="false" />
+    </properties>
+    <testcase name="Proxy" status="run" time="0" classname="Vector" />
+    <system-out><![CDATA[]]></system-out>
+    <system-err><![CDATA[]]></system-err>
+  </testsuite>
+</testsuites>"""
+
     def setUp(self):
         self.basedir = os.path.realpath(tempfile.mkdtemp())
         self.ctxt = Context(self.basedir)
 
     def tearDown(self):
         shutil.rmtree(self.basedir)
+
+    def _create_file(self, *path, **kw):
+        filename = os.path.join(self.basedir, *path)
+        dirname = os.path.dirname(filename)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+        fd = file(filename, 'w')
+        content = kw.get('content')
+        if content is not None:
+            fd.write(content)
+        fd.close()
+        return filename[len(self.basedir) + 1:]
 
     def _xml_file(self, body, name="", errors=0, failures=0, skips=0, tests=0, time=0.01):
         if tests == 0:
@@ -210,10 +251,28 @@ class PyTestTestCase(unittest.TestCase):
 
         self.assertEqual(0, len(self.ctxt.output))
 
+    def test_parse_and_compare_formats(self):
+        # parse xml_template1
+        f1 = self._create_file('junit1.xml', content=self.xml_template1)
+        javatools.junit(self.ctxt, file_=f1)
+        type1, category1, generator1, xml1 = self.ctxt.output.pop()
+        self.assertEqual('report', type1)
+        self.assertEqual('test', category1)
+        # parse xml_template2
+        f2 = self._create_file('junit2.xml', content=self.xml_template2)
+        javatools.junit(self.ctxt, file_=f2)
+        type2, category2, generator2, xml2 = self.ctxt.output.pop()
+        self.assertEqual('report', type1)
+        self.assertEqual('test', category1)
+        # compare
+        for i in range(2):
+            self.assertEquals(xml1.children[i].name, xml2.children[i].name)
+            self.assertEquals(xml1.children[i].attr, xml2.children[i].attr)
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(CoberturaTestCase, 'test'))
-    suite.addTest(unittest.makeSuite(PyTestTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(JUnitTestCase, 'test'))
     return suite
 
 if __name__ == '__main__':
