@@ -14,6 +14,7 @@ import unittest
 from trac.core import TracError
 from trac.db import DatabaseManager
 from trac.perm import PermissionCache, PermissionError, PermissionSystem
+from trac.resource import Resource
 from trac.test import EnvironmentStub, Mock
 from trac.web.href import Href
 from trac.web.main import RequestDone
@@ -56,9 +57,29 @@ class BuildMasterAdminPageProviderTestCase(unittest.TestCase):
             normalize_path=lambda path: path,
             sync=lambda: None
         )
-        self.env.get_repository = lambda authname=None: self.repos
+        self.env.get_repository = lambda authname=None: self.repos # 0.11
+        try: # 0.12+
+            from trac.core import Component, implements
+            from trac.versioncontrol.api import IRepositoryConnector, \
+                                                IRepositoryProvider
+            class DummyRepos(Component):
+                implements(IRepositoryConnector, IRepositoryProvider)
+                def get_supported_types(self):
+                    yield ('dummy', 9)
+                def get_repository(this, repos_type, repos_dir, params):
+                    return self.repos # Note: 'this' vs 'self' usage
+                def get_repositories(self):
+                    yield ('', {'dir': 'dummy_dir', 'type': 'dummy'})
+            self.dummy = DummyRepos
+        except ImportError:
+            self.dummy = None # not supported, will use get_repository()
 
     def tearDown(self):
+        if self.dummy: # remove from components list + interfaces dict
+            self.env.__metaclass__._components.remove(self.dummy)
+            for key in self.env.__metaclass__._registry.keys():
+                if self.dummy in self.env.__metaclass__._registry[key]:
+                    self.env.__metaclass__._registry[key].remove(self.dummy)
         if DefaultPermissionPolicy is not None and hasattr(DefaultPermissionPolicy, "CACHE_EXPIRY"):
             DefaultPermissionPolicy.CACHE_EXPIRY = self.old_perm_cache_expiry
         shutil.rmtree(self.env.path)
@@ -144,11 +165,32 @@ class BuildConfigurationsAdminPageProviderTestCase(unittest.TestCase):
             get_node=lambda path, rev=None: Mock(get_history=lambda: [],
                                                  isdir=True),
             normalize_path=lambda path: path,
-            sync=lambda: None
+            sync=lambda: None,
+            resource=Resource('repository', None)
         )
-        self.env.get_repository = lambda authname=None: self.repos
+        self.env.get_repository = lambda authname=None: self.repos # 0.11
+        try: # 0.12+
+            from trac.core import Component, implements
+            from trac.versioncontrol.api import IRepositoryConnector, \
+                                                IRepositoryProvider
+            class DummyRepos(Component):
+                implements(IRepositoryConnector, IRepositoryProvider)
+                def get_supported_types(self):
+                    yield ('dummy', 9)
+                def get_repository(this, repos_type, repos_dir, params):
+                    return self.repos # Note: 'this' vs 'self' usage
+                def get_repositories(self):
+                    yield ('', {'dir': 'dummy_dir', 'type': 'dummy'})
+            self.dummy = DummyRepos
+        except ImportError:
+            self.dummy = None # not supported, will use get_repository()
 
     def tearDown(self):
+        if self.dummy: # remove from components list + interfaces dict
+            self.env.__metaclass__._components.remove(self.dummy)
+            for key in self.env.__metaclass__._registry.keys():
+                if self.dummy in self.env.__metaclass__._registry[key]:
+                    self.env.__metaclass__._registry[key].remove(self.dummy)
         if DefaultPermissionPolicy is not None and hasattr(DefaultPermissionPolicy, "CACHE_EXPIRY"):
             DefaultPermissionPolicy.CACHE_EXPIRY = self.old_perm_cache_expiry
         shutil.rmtree(self.env.path)
@@ -552,9 +594,13 @@ class BuildConfigurationsAdminPageProviderTestCase(unittest.TestCase):
         provider.render_admin_panel(req, 'bitten', 'configs', 'foo')
         
         self.failUnless(req.chrome['warnings'], "No warnings?")
-        self.assertEquals(req.chrome['warnings'],
+        self.assertTrue(req.chrome['warnings'] in (
+                    # single repos / 0.11
                     ['Invalid Repository Path: "invalid/path" does not exist '
-                     'within the "(default)" repository.'])
+                     'within the "(default)" repository.'],
+                     # multi-repos / 0.12+
+                    ['Invalid Repository Path "invalid/path".']),
+                req.chrome['warnings'])
 
     def test_process_update_config_non_wellformed_recipe(self):
         BuildConfig(self.env, name='foo', label='Foo', path='branches/foo',

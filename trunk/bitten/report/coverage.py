@@ -17,6 +17,7 @@ from trac.web.api import IRequestFilter
 from trac.web.chrome import add_stylesheet, add_ctxtnav, add_warning
 from bitten.api import IReportChartGenerator, IReportSummarizer
 from bitten.model import BuildConfig, Build, Report
+from bitten.util.repository import get_repos
 
 __docformat__ = 'restructuredtext en'
 
@@ -138,49 +139,6 @@ ORDER BY item_name.value""", (build.id, step.name))
 
 class TestCoverageAnnotator(Component):
     """
-    >>> from genshi.builder import tag
-    >>> from trac.test import Mock, MockPerm
-    >>> from trac.mimeview import Context
-    >>> from trac.util.datefmt import to_datetime, utc
-    >>> from trac.web.href import Href
-    >>> from bitten.model import BuildConfig, Build, Report
-    >>> from bitten.report.tests.coverage import env_stub_with_tables
-    >>> env = env_stub_with_tables()
-    >>> repos = Mock(get_changeset=lambda x: Mock(date=to_datetime(12345, utc)))
-    >>> env.get_repository = lambda: repos
-
-    >>> BuildConfig(env, name='trunk', path='trunk').insert()
-    >>> Build(env, rev=123, config='trunk', rev_time=12345, platform=1).insert()
-    >>> rpt = Report(env, build=1, step='test', category='coverage')
-    >>> rpt.items.append({'file': 'foo.py', 'line_hits': '5 - 0'})
-    >>> rpt.insert()
-
-    >>> ann = TestCoverageAnnotator(env)
-    >>> req = Mock(href=Href('/'), perm=MockPerm(),
-    ...                 chrome={'warnings': []}, args={})
-
-    Version in the branch should not match:
-    >>> context = Context.from_request(req, 'source', '/branches/blah/foo.py', 123)
-    >>> ann.get_annotation_data(context)
-    []
-
-    Version in the trunk should match:
-    >>> context = Context.from_request(req, 'source', '/trunk/foo.py', 123)
-    >>> data = ann.get_annotation_data(context)
-    >>> print data
-    [u'5', u'-', u'0']
-
-    >>> def annotate_row(lineno, line):
-    ...     row = tag.tr()
-    ...     ann.annotate_row(context, row, lineno, line, data)
-    ...     return unicode(row.generate().render('html'))
-
-    >>> annotate_row(1, 'x = 1')
-    u'<tr><th class="covered">5</th></tr>'
-    >>> annotate_row(2, '')
-    u'<tr><th></th></tr>'
-    >>> annotate_row(3, 'y = x')
-    u'<tr><th class="uncovered">0</th></tr>'
     """
     implements(IRequestFilter, IHTMLPreviewAnnotator)
 
@@ -222,7 +180,7 @@ class TestCoverageAnnotator(Component):
         # pick coverage data as latest(version >= file_revision)
         created = context.req.args.get('created', resource.version)
 
-        repos = self.env.get_repository()        
+        _name, repos, _path = get_repos(self.env, resource.id, None)
         version_time = to_timestamp(repos.get_changeset(version).date)
         if version != created:
             created_time = to_timestamp(repos.get_changeset(created).date)

@@ -15,3 +15,4 @@ package, so that they could theoretically be used in other projects.
 """
 
 __docformat__ = 'restructuredtext en'
+from bitten.util.repository import get_repos, get_chgset_resource

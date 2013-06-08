@@ -52,10 +52,31 @@ class BuildMasterTestCase(unittest.TestCase):
             for stmt in connector.to_sql(table):
                 cursor.execute(stmt)
 
+        # Hook up a dummy repository
         self.repos = Mock(get_changeset=lambda rev: Mock(author = 'author'))
-        self.env.get_repository = lambda authname=None: self.repos
+        self.env.get_repository = lambda authname=None: self.repos # 0.11
+        try: # 0.12+
+            from trac.core import Component, implements
+            from trac.versioncontrol.api import IRepositoryConnector, \
+                                                IRepositoryProvider
+            class DummyRepos(Component):
+                implements(IRepositoryConnector, IRepositoryProvider)
+                def get_supported_types(self):
+                    yield ('dummy', 9)
+                def get_repository(this, repos_type, repos_dir, params):
+                    return self.repos # Note: 'this' vs 'self' usage
+                def get_repositories(self):
+                    yield ('', {'dir': 'dummy_dir', 'type': 'dummy'})
+            self.dummy = DummyRepos
+        except ImportError:
+            self.dummy = None # not supported, will use get_repository()
 
     def tearDown(self):
+        if self.dummy: # remove from components list + interfaces dict
+            self.env.__metaclass__._components.remove(self.dummy)
+            for key in self.env.__metaclass__._registry.keys():
+                if self.dummy in self.env.__metaclass__._registry[key]:
+                    self.env.__metaclass__._registry[key].remove(self.dummy)
         shutil.rmtree(self.env.path)
 
     def test_create_build(self):
@@ -279,6 +300,7 @@ class BuildMasterTestCase(unittest.TestCase):
         req = Mock(method='GET', base_path='',
                    path_info='/builds/%d' % build.id,
                    href=Href('/trac'), remote_addr='127.0.0.1', args={},
+                   authname='hal',
                    perm=PermissionCache(self.env, 'hal'),
                    send_response=lambda x: outheaders.setdefault('Status', x),
                    send_header=lambda x, y: outheaders.setdefault(x, y),
@@ -290,16 +312,16 @@ class BuildMasterTestCase(unittest.TestCase):
         assert module.match_request(req)
 
         self.assertRaises(RequestDone, module.process_request, req)
-
         self.assertEqual(200, outheaders['Status'])
-        self.assertEqual('131', outheaders['Content-Length'])
+        self.assertEqual('163', outheaders['Content-Length'])
         self.assertEqual('application/x-bitten+xml',
                          outheaders['Content-Type'])
         self.assertEqual('attachment; filename=recipe_test_r123.xml',
                          outheaders['Content-Disposition'])
         self.assertEqual('<build build="1" config="test" form_token="12345" '
-                         'name="hal" path="somepath" platform="Unix"'
-                         ' revision="123"><step id="s1"/></build>',
+                         'name="hal" path="somepath" platform="Unix" '
+                         'reponame="" repopath="somepath" '
+                         'revision="123"><step id="s1"/></build>',
                          outbody.getvalue())
 
         # Make sure the started timestamp has been set

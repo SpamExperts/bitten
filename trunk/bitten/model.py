@@ -18,6 +18,7 @@ from trac.util.datefmt import to_timestamp, utcmin, utcmax
 from datetime import datetime
 import codecs
 import os
+from bitten.util.repository import get_repos
 
 __docformat__ = 'restructuredtext en'
 
@@ -192,10 +193,7 @@ class BuildConfig(object):
         """Returns the time of the minimum revision being built for this
         configuration. Returns utcmin if not specified.
         """
-        repos = env.get_repository()
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
-        
+        _name, repos, _path = get_repos(env, self.path, None)
         min_time = utcmin
         if self.min_rev:
             min_time = repos.get_changeset(self.min_rev).date
@@ -209,10 +207,7 @@ class BuildConfig(object):
         """Returns the time of the maximum revision being built for this
         configuration. Returns utcmax if not specified.
         """
-        repos = env.get_repository()
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
-
+        _name, repos, _path = get_repos(env, self.path, None)
         max_time = utcmax
         if self.max_rev:
             max_time = repos.get_changeset(self.max_rev).date

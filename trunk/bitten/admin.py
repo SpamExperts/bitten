@@ -15,10 +15,12 @@ import re
 from trac.core import *
 from trac.admin import IAdminPanelProvider
 from trac.web.chrome import add_stylesheet, add_script, add_warning, add_notice
+from trac.versioncontrol.api import RepositoryManager
 
+from bitten import __multirepos__
 from bitten.model import BuildConfig, TargetPlatform
 from bitten.recipe import Recipe, InvalidRecipeError
-from bitten.util import xmlio
+from bitten.util import xmlio, get_repos
 
 
 class BuildMasterAdminPageProvider(Component):
@@ -273,27 +275,22 @@ class BuildConfigurationsAdminPageProvider(Component):
             warnings.append('The field "name" may only contain letters, '
                             'digits, periods, or dashes.')
 
-        repos = self.env.get_repository(authname=req.authname)
-        if not repos:
-            warnings.append('No "(default)" Repository: Add a repository or '
-                            'alias named "(default)" to Trac.')
         path = req.args.get('path', '')
-        min_rev = req.args.get('min_rev') or None
+        repos_name, repos, repos_path = get_repos(self.env, path, req.authname)
         max_rev = req.args.get('max_rev') or None
+        min_rev = req.args.get('min_rev') or None
 
-        if repos:
-            path = repos.normalize_path(path)
+        try:
+            node = repos.get_node(repos_path, max_rev)
+            assert node.isdir, '%s is not a directory' % node.path
+        except (AssertionError, TracError), e:
+            warnings.append('Invalid Repository Path "%s".' % path)
+
+        if min_rev:
             try:
-                node = repos.get_node(path, max_rev)
-                assert node.isdir, '%s is not a directory' % node.path
-            except (AssertionError, TracError), e:
-                warnings.append('Invalid Repository Path: "%s" does not exist '
-                                'within the "(default)" repository.' % path)
-            if min_rev:
-                try:
-                    repos.get_node(path, min_rev)
-                except TracError, e:
-                    warnings.append('Invalid Oldest Revision: %s.' % unicode(e))
+                repos.get_node(repos_path, min_rev)
+            except TracError, e:
+                warnings.append('Invalid Oldest Revision: %s.' % unicode(e))
 
         recipe_xml = req.args.get('recipe', '')
         if recipe_xml:
@@ -305,7 +302,7 @@ class BuildConfigurationsAdminPageProvider(Component):
                 warnings.append('Invalid Recipe: %s.' % unicode(e))
 
         config.name = name
-        config.path = path
+        config.path = __multirepos__ and path or repos.normalize_path(path)
         config.recipe = recipe_xml
         config.min_rev = min_rev
         config.max_rev = max_rev

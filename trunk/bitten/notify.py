@@ -12,7 +12,8 @@ from trac.web.chrome import ITemplateProvider, Chrome
 from trac.config import BoolOption
 from trac.notification import NotifyEmail
 from bitten.api import IBuildListener
-from bitten.model import Build, BuildStep, BuildLog, TargetPlatform
+from bitten.model import Build, BuildStep, BuildLog, BuildConfig, TargetPlatform
+from bitten.util.repository import get_repos, display_rev
 
 
 class BittenNotify(Component):
@@ -101,7 +102,7 @@ class BuildNotifyEmail(NotifyEmail):
         self.data.update(self.template_data())
         subject = '[%s Build] %s [%s] %s' % (self.readable_states[build.status],
                                              self.env.project_name,
-                                             self.build.rev,
+                                             self.data['change']['rev'],
                                              self.build.config)
         NotifyEmail.notify(self, self.build.id, subject)
 
@@ -124,7 +125,7 @@ class BuildNotifyEmail(NotifyEmail):
         failed_steps = BuildStep.select(self.env, build=self.build.id,
                                         status=BuildStep.FAILURE)
         platform = TargetPlatform.fetch(self.env, id=self.build.platform)
-        change = self.get_changeset()
+        reposname, repos, change = self.get_change()
         return {
             'build': {
                 'id': self.build.id,
@@ -141,8 +142,9 @@ class BuildNotifyEmail(NotifyEmail):
                 } for step in failed_steps],
             },
             'change': {
-                'rev': change.rev,
-                'link': self.env.abs_href.changeset(change.rev),
+                'rev': display_rev(repos, change.rev),
+                'link': self.env.abs_href.changeset(change.rev,
+                            reposname != '(default)' and reposname or None),
                 'author': change.author,
             },
         }
@@ -154,11 +156,11 @@ class BuildNotifyEmail(NotifyEmail):
             messages.extend(log.messages)
         return messages
 
-    def get_changeset(self):
-        repos = self.env.get_repository()
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
-        return repos.get_changeset(self.build.rev)
+    def get_change(self):
+        config_path = BuildConfig.fetch(self.env, name=self.build.config).path
+        reposname, repos, _path = get_repos(self.env, config_path, None)
+        return reposname, repos, repos.get_changeset(self.build.rev)
 
     def get_author(self):
-        return self.get_changeset().author
+        reposname, repos, changeset = self.get_change()
+        return changeset.author

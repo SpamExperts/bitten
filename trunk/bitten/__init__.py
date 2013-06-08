@@ -9,6 +9,7 @@
 # are also available at http://bitten.edgewall.org/wiki/License.
 
 __docformat__ = 'restructuredtext en'
+__multirepos__ = None
 try:
     __version__ = __import__('pkg_resources').get_distribution('Bitten').version
 except:

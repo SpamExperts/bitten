@@ -28,7 +28,7 @@ class CollectChangesTestCase(unittest.TestCase):
     """
 
     def setUp(self):
-        self.env = EnvironmentStub()
+        self.env = EnvironmentStub(enable=['trac.*', 'bitten.*'])
         self.env.path = tempfile.mkdtemp()
 
         db = self.env.get_db_cnx()
@@ -44,55 +44,71 @@ class CollectChangesTestCase(unittest.TestCase):
         self.platform.insert(db=db)
         db.commit()
 
+        # Hook up a dummy repository
+        self.repos = Mock()
+        self.env.get_repository = lambda authname=None: self.repos # 0.11
+        try: # 0.12+
+            from trac.core import Component, implements
+            from trac.versioncontrol.api import IRepositoryConnector, \
+                                                IRepositoryProvider
+            class DummyRepos(Component):
+                implements(IRepositoryConnector, IRepositoryProvider)
+                def get_supported_types(self):
+                    yield ('dummy', 9)
+                def get_repository(this, repos_type, repos_dir, params):
+                    return self.repos # Note: 'this' vs 'self' usage
+                def get_repositories(self):
+                    yield ('', {'dir': 'dummy_dir', 'type': 'dummy'})
+            self.dummy = DummyRepos
+        except ImportError:
+            self.dummy = None # not supported, will use get_repository()
+
     def tearDown(self):
+        if self.dummy: # remove from components list + interfaces dict
+            self.env.__metaclass__._components.remove(self.dummy)
+            for key in self.env.__metaclass__._registry.keys():
+                if self.dummy in self.env.__metaclass__._registry[key]:
+                    self.env.__metaclass__._registry[key].remove(self.dummy)
         shutil.rmtree(self.env.path)
 
     def test_stop_on_copy(self):
-        self.env.get_repository = lambda authname=None: Mock(
-            get_node=lambda path, rev=None: Mock(
-                get_history=lambda: [('otherpath', 123, 'copy')]
-            ),
-            normalize_path=lambda path: path
-        )
 
-        retval = list(collect_changes(self.env.get_repository(), self.config))
+        self.repos.get_node=lambda path, rev=None: Mock(
+                get_history=lambda: [('otherpath', 123, 'copy')])
+        self.repos.normalize_path=lambda path: path
+
+        retval = list(collect_changes(self.config))
         self.assertEqual(0, len(retval))
 
     def test_stop_on_minrev(self):
-        self.env.get_repository = lambda authname=None: Mock(
-            get_node=lambda path, rev=None: Mock(
+        self.repos.get_node=lambda path, rev=None: Mock(
                 get_entries=lambda: [Mock(), Mock()],
                 get_history=lambda: [('somepath', 123, 'edit'),
                                      ('somepath', 121, 'edit'),
-                                     ('somepath', 120, 'edit')]
-            ),
-            normalize_path=lambda path: path,
-            rev_older_than=lambda rev1, rev2: rev1 < rev2
-        )
+                                     ('somepath', 120, 'edit')])
+        self.repos.normalize_path=lambda path: path
+        self.repos.rev_older_than=lambda rev1, rev2: rev1 < rev2
 
         self.config.min_rev = 123
         self.config.update()
 
-        retval = list(collect_changes(self.env.get_repository(), self.config))
+        retval = list(collect_changes(self.config))
         self.assertEqual(1, len(retval))
         self.assertEqual(123, retval[0][1])
 
     def test_skip_until_maxrev(self):
-        self.env.get_repository = lambda authname=None: Mock(
-            get_node=lambda path, rev=None: Mock(
+        self.repos.get_node=lambda path, rev=None: Mock(
                 get_entries=lambda: [Mock(), Mock()],
                 get_history=lambda: [('somepath', 123, 'edit'),
                                      ('somepath', 121, 'edit'),
-                                     ('somepath', 120, 'edit')]
-            ),
-            normalize_path=lambda path: path,
-            rev_older_than=lambda rev1, rev2: rev1 < rev2
-        )
+                                     ('somepath', 120, 'edit')])
+        self.repos.normalize_path=lambda path: path
+        self.repos.rev_older_than=lambda rev1, rev2: rev1 < rev2
 
         self.config.max_rev=121
         self.config.update()
 
-        retval = list(collect_changes(self.env.get_repository(), self.config))
+        retval = list(collect_changes(self.config))
         self.assertEqual(2, len(retval))
         self.assertEqual(121, retval[0][1])
         self.assertEqual(120, retval[1][1])
@@ -111,13 +127,11 @@ class CollectChangesTestCase(unittest.TestCase):
                                          ('somepath', 120, 'edit')]
                 )
 
-        self.env.get_repository = lambda authname=None: Mock(
-            get_node=_mock_get_node,
-            normalize_path=lambda path: path,
-            rev_older_than=lambda rev1, rev2: rev1 < rev2
-        )
+        self.repos.get_node=_mock_get_node
+        self.repos.normalize_path=lambda path: path
+        self.repos.rev_older_than=lambda rev1, rev2: rev1 < rev2
 
-        retval = list(collect_changes(self.env.get_repository(), self.config))
+        retval = list(collect_changes(self.config))
         self.assertEqual(2, len(retval))
         self.assertEqual(123, retval[0][1])
         self.assertEqual(120, retval[1][1])
@@ -126,7 +140,7 @@ class CollectChangesTestCase(unittest.TestCase):
 class BuildQueueTestCase(unittest.TestCase):
 
     def setUp(self):
-        self.env = EnvironmentStub()
+        self.env = EnvironmentStub(enable=['trac.*', 'bitten.*'])
         self.env.path = tempfile.mkdtemp()
 
         db = self.env.get_db_cnx()
@@ -139,9 +153,29 @@ class BuildQueueTestCase(unittest.TestCase):
 
         # Hook up a dummy repository
         self.repos = Mock()
-        self.env.get_repository = lambda authname=None: self.repos
+        self.env.get_repository = lambda authname=None: self.repos # 0.11
+        try: # 0.12+
+            from trac.core import Component, implements
+            from trac.versioncontrol.api import IRepositoryConnector, \
+                                                IRepositoryProvider
+            class DummyRepos(Component):
+                implements(IRepositoryConnector, IRepositoryProvider)
+                def get_supported_types(self):
+                    yield ('dummy', 9)
+                def get_repository(this, repos_type, repos_dir, params):
+                    return self.repos # Note: 'this' vs 'self' usage
+                def get_repositories(self):
+                    yield ('', {'dir': 'dummy_dir', 'type': 'dummy'})
+            self.dummy = DummyRepos
+        except ImportError:
+            self.dummy = None # not supported, will use get_repository()
 
     def tearDown(self):
+        if self.dummy: # remove from components list + interfaces dict
+            self.env.__metaclass__._components.remove(self.dummy)
+            for key in self.env.__metaclass__._registry.keys():
+                if self.dummy in self.env.__metaclass__._registry[key]:
+                    self.env.__metaclass__._registry[key].remove(self.dummy)
         shutil.rmtree(self.env.path)
 
     def test_get_build_for_slave(self):
@@ -191,26 +225,17 @@ class BuildQueueTestCase(unittest.TestCase):
         build = queue.get_build_for_slave('foobar', {})
         self.assertEqual(None, build)
 
-    def test_populate_no_repos(self):
-        """
-        Cannot work when there are no repositories defined.
-        """
-        self.env.get_repository = lambda: None
-        queue = BuildQueue(self.env)
-        self.assertRaises(AssertionError, queue.populate)
-
     def test_populate_not_build_all(self):
-        self.env.get_repository = lambda authname=None: Mock(
-            get_changeset=lambda rev: Mock(date=to_datetime(rev * 1000, utc)),
-            get_node=lambda path, rev=None: Mock(
+        self.repos.get_changeset = lambda rev: Mock(
+                                            date=to_datetime(rev * 1000, utc))
+        self.repos.get_node = lambda path, rev=None: Mock(
                 get_entries=lambda: [Mock(), Mock()],
                 get_history=lambda: [('somepath', 123, 'edit'),
                                      ('somepath', 121, 'edit'),
-                                     ('somepath', 120, 'edit')]
-            ),
-            normalize_path=lambda path: path,
-            rev_older_than=lambda rev1, rev2: rev1 < rev2
-        )
+                                     ('somepath', 120, 'edit')])
+        self.repos.normalize_path=lambda path: path
+        self.repos.rev_older_than=lambda rev1, rev2: rev1 < rev2
+
         BuildConfig(self.env, 'test', path='somepath', active=True).insert()
         platform1 = TargetPlatform(self.env, config='test', name='P1')
         platform1.insert()
@@ -231,17 +256,16 @@ class BuildQueueTestCase(unittest.TestCase):
         self.assertEqual('123', builds[1].rev)
 
     def test_populate_build_all(self):
-        self.env.get_repository = lambda authname=None: Mock(
-            get_changeset=lambda rev: Mock(date=to_datetime(rev * 1000, utc)),
-            get_node=lambda path, rev=None: Mock(
+        self.repos.get_changeset=lambda rev: Mock(
+                                            date=to_datetime(rev * 1000, utc))
+        self.repos.get_node=lambda path, rev=None: Mock(
                 get_entries=lambda: [Mock(), Mock()],
                 get_history=lambda: [('somepath', 123, 'edit'),
                                      ('somepath', 121, 'edit'),
-                                     ('somepath', 120, 'edit')]
-            ),
-            normalize_path=lambda path: path,
-            rev_older_than=lambda rev1, rev2: rev1 < rev2
-        )
+                                     ('somepath', 120, 'edit')])
+        self.repos.normalize_path=lambda path: path
+        self.repos.rev_older_than=lambda rev1, rev2: rev1 < rev2
+        
         BuildConfig(self.env, 'test', path='somepath', active=True).insert()
         platform1 = TargetPlatform(self.env, config='test', name='P1')
         platform1.insert()
@@ -277,15 +301,14 @@ class BuildQueueTestCase(unittest.TestCase):
             yield ('somepath', 121, 'edit')
             yield ('somepath', 120, 'edit')
             time.sleep(1) # sleep to make sure both threads collect
-        self.env.get_repository = lambda authname=None: Mock(
-            get_changeset=lambda rev: Mock(date=to_datetime(rev * 1000, utc)),
-            get_node=lambda path, rev=None: Mock(
+        self.repos.get_changeset=lambda rev: Mock(
+                                        date=to_datetime(rev * 1000, utc))
+        self.repos.get_node=lambda path, rev=None: Mock(
                 get_entries=lambda: [Mock(), Mock()],
-                get_history=get_history
-            ),
-            normalize_path=lambda path: path,
-            rev_older_than=lambda rev1, rev2: rev1 < rev2
-        )
+                get_history=get_history)
+        self.repos.normalize_path=lambda path: path
+        self.repos.rev_older_than=lambda rev1, rev2: rev1 < rev2
+        
         BuildConfig(self.env, 'test', path='somepath', active=True).insert()
         platform1 = TargetPlatform(self.env, config='test', name='P1')
         platform1.insert()

@@ -11,15 +11,15 @@ import unittest
 from trac.db import DatabaseManager
 from trac.test import EnvironmentStub, Mock
 from trac.web.session import DetachedSession
-from bitten.model import schema, Build, BuildStep, BuildLog
+from bitten.model import schema, Build, BuildStep, BuildLog, BuildConfig
 from bitten.notify import BittenNotify, BuildNotifyEmail
 
 
 class BittenNotifyBaseTest(unittest.TestCase):
+
     def setUp(self):
-        self.env = EnvironmentStub(enable=['trac.*', 'bitten.notify.*'])
-        repos = Mock(get_changeset=lambda rev: Mock(author='author', rev=rev))
-        self.env.get_repository = lambda authname=None: repos
+        self.env = EnvironmentStub(enable=['trac.*', 'bitten.notify.*',
+                                           'bitten.tests.notify.*'])
 
         db = self.env.get_db_cnx()
         cursor = db.cursor()
@@ -28,6 +28,34 @@ class BittenNotifyBaseTest(unittest.TestCase):
             for stmt in connector.to_sql(table):
                 cursor.execute(stmt)
         db.commit()
+
+        # Hook up a dummy repository
+        self.repos = Mock(
+                    get_changeset=lambda rev: Mock(author='author', rev=rev),
+                    normalize_rev=lambda rev: rev)
+        self.env.get_repository = lambda authname=None: self.repos # 0.11
+        try: # 0.12+
+            from trac.core import Component, implements
+            from trac.versioncontrol.api import IRepositoryConnector, \
+                                                IRepositoryProvider
+            class DummyRepos(Component):
+                implements(IRepositoryConnector, IRepositoryProvider)
+                def get_supported_types(self):
+                    yield ('dummy', 9)
+                def get_repository(this, repos_type, repos_dir, params):
+                    return self.repos # Note: 'this' vs 'self' usage
+                def get_repositories(self):
+                    yield ('', {'dir': 'dummy_dir', 'type': 'dummy'})
+            self.dummy = DummyRepos
+        except ImportError:
+            self.dummy = None # not supported, will use get_repository()
+
+    def tearDown(self):
+        if self.dummy: # remove from components list + interfaces dict
+            self.env.__metaclass__._components.remove(self.dummy)
+            for key in self.env.__metaclass__._registry.keys():
+                if self.dummy in self.env.__metaclass__._registry[key]:
+                    self.env.__metaclass__._registry[key].remove(self.dummy)
 
 
 class BittenNotifyTest(BittenNotifyBaseTest):
@@ -76,7 +104,8 @@ class BuildNotifyEmailTest(BittenNotifyBaseTest):
                           begin_send=noop,
                           finish_send=noop,
                           send=send)
-        self.build = Build(self.env, status=Build.SUCCESS, rev=123)
+        BuildConfig(self.env, name='c', path='trunk').insert()
+        self.build = Build(self.env, config='c', status=Build.SUCCESS, rev=123)
 
     def test_notification_is_sent_to_author(self):
         self.email.notify(self.build)

@@ -29,11 +29,12 @@ from trac.attachment import Attachment
 
 
 from bitten.model import BuildConfig, TargetPlatform, Build, BuildStep
+from bitten.util.repository import get_repos
 
 __docformat__ = 'restructuredtext en'
 
 
-def collect_changes(repos, config, db=None):
+def collect_changes(config, authname=None, db=None):
     """Collect all changes for a build configuration that either have already
     been built, or still need to be built.
     
@@ -41,24 +42,27 @@ def collect_changes(repos, config, db=None):
     where ``platform`` is a `TargetPlatform` object, ``rev`` is the identifier
     of the changeset, and ``build`` is a `Build` object or `None`.
 
-    :param repos: the version control repository
     :param config: the build configuration
+    :param authname: the logged in user
     :param db: a database connection (optional)
     """
     env = config.env
+
+    repos_name, repos, repos_path = get_repos(env, config.path, authname)
+
     if not db:
         db = env.get_db_cnx()
     try:
-        node = repos.get_node(config.path, config.max_rev)
+        node = repos.get_node(repos_path)
     except Exception, e:
         env.log.warn('Error accessing path %r for configuration %r',
-                    config.path, config.name, exc_info=True)
+                    repos_path, config.name, exc_info=True)
         return
 
     for path, rev, chg in node.get_history():
 
         # Don't follow moves/copies
-        if path != repos.normalize_path(config.path):
+        if path != repos.normalize_path(repos_path):
             break
 
         # Stay within the limits of the build config
@@ -130,9 +134,6 @@ class BuildQueue(object):
         self.log.debug('Checking for pending builds...')
 
         db = self.env.get_db_cnx()
-        repos = self.env.get_repository()
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
 
         self.reset_orphaned_builds()
 
@@ -142,6 +143,8 @@ class BuildQueue(object):
         builds_to_delete = []
         build_found = False
         for build in Build.select(self.env, status=Build.PENDING, db=db):
+            config_path = BuildConfig.fetch(self.env, name=build.config).path
+            _name, repos, _path = get_repos(self.env, config_path, None)
             if self.should_delete_build(build, repos):
                 self.log.info('Scheduling build %d for deletion', build.id)
                 builds_to_delete.append(build)
@@ -214,16 +217,12 @@ class BuildQueue(object):
         method will eventually result in the entire change history of the build
         configuration being in the build queue.
         """
-        repos = self.env.get_repository()
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
-
         db = self.env.get_db_cnx()
         builds = []
 
         for config in BuildConfig.select(self.env, db=db):
             platforms = []
-            for platform, rev, build in collect_changes(repos, config, db):
+            for platform, rev, build in collect_changes(config, db=db):
 
                 if not self.build_all and platform.id in platforms:
                     # We've seen this platform already, so these are older
@@ -238,6 +237,8 @@ class BuildQueue(object):
                     self.log.info('Enqueuing build of configuration "%s" at '
                                   'revision [%s] on %s', config.name, rev,
                                   platform.name)
+                    _repos_name, repos, _repos_path = get_repos(
+                                    self.env, config.path, None)
 
                     rev_time = to_timestamp(repos.get_changeset(rev).date)
                     age = int(time.time()) - rev_time

@@ -15,6 +15,7 @@ import unittest
 from trac.core import TracError
 from trac.db import DatabaseManager
 from trac.perm import PermissionCache, PermissionSystem
+from trac.resource import Resource
 from trac.test import EnvironmentStub, Mock
 from trac.util.html import Markup
 from trac.web.api import HTTPNotFound
@@ -50,11 +51,32 @@ class AbstractWebUITestCase(unittest.TestCase):
             normalize_path=lambda path: path,
             normalize_rev=lambda rev: rev,
             sync=lambda: None,
-        )
-        self.repos.authz = Mock(has_permission=lambda path: True, assert_permission=lambda path: None)
-        self.env.get_repository = lambda authname=None: self.repos
+            resource=Resource('repository', None),
+            authz = Mock(has_permission=lambda path: True,
+                         assert_permission=lambda path: None))
+        self.env.get_repository = lambda authname=None: self.repos # 0.11
+        try: # 0.12+
+            from trac.core import Component, implements
+            from trac.versioncontrol.api import IRepositoryConnector, \
+                                                IRepositoryProvider
+            class DummyRepos(Component):
+                implements(IRepositoryConnector, IRepositoryProvider)
+                def get_supported_types(self):
+                    yield ('dummy', 9)
+                def get_repository(this, repos_type, repos_dir, params):
+                    return self.repos # Note: 'this' vs 'self' usage
+                def get_repositories(self):
+                    yield ('', {'dir': 'dummy_dir', 'type': 'dummy'})
+            self.dummy = DummyRepos
+        except ImportError:
+            self.dummy = None # not supported, will use get_repository()
 
     def tearDown(self):
+        if self.dummy: # remove from components list + interfaces dict
+            self.env.__metaclass__._components.remove(self.dummy)
+            for key in self.env.__metaclass__._registry.keys():
+                if self.dummy in self.env.__metaclass__._registry[key]:
+                    self.env.__metaclass__._registry[key].remove(self.dummy)
         shutil.rmtree(self.env.path)
 
 
@@ -87,10 +109,9 @@ class BuildConfigControllerTestCase(AbstractWebUITestCase):
         root = Mock(get_entries=lambda: ['foo'],
                     get_history=lambda: [('trunk', rev, 'edit') for rev in
                                           range(123, 111, -1)])
-        self.repos = Mock(get_node=lambda path, rev=None: root,
-                          sync=lambda: None, normalize_path=lambda path: path,
-                          normalize_rev=lambda rev: rev, youngest_rev=123)
-        self.repos.authz = Mock(has_permission=lambda path: True, assert_permission=lambda path: None)
+        self.repos.get_node=lambda path, rev=None: root
+        self.repos.youngest_rev=123
+        self.repos.get_changeset=lambda rev: Mock(author='joe', date=99)
 
         module = BuildConfigController(self.env)
         assert module.match_request(req)
@@ -99,7 +120,6 @@ class BuildConfigControllerTestCase(AbstractWebUITestCase):
         self.assertEqual('view_config', data['page_mode'])
         assert not 'next' in req.chrome['links']
 
-        from trac.resource import Resource
         self.assertEquals(Resource('build', 'test'), data['context'].resource)
 
         self.assertEquals([], data['config']['attachments']['attachments'])
@@ -126,10 +146,9 @@ class BuildConfigControllerTestCase(AbstractWebUITestCase):
         revision_ids = [5, 8, 2]
         revision_list = [('trunk', revision, 'edit') for revision in revision_ids]
         root = Mock(get_entries=lambda: ['foo'], get_history=lambda: revision_list)
-        self.repos = Mock(get_node=lambda path, rev=None: root,
-                          sync=lambda: None, normalize_path=lambda path: path,
-                          normalize_rev=lambda rev: rev, youngest_rev=5)
-        self.repos.authz = Mock(has_permission=lambda path: True, assert_permission=lambda path: None)
+        self.repos.get_node=lambda path, rev=None: root
+        self.repos.youngest_rev=5
+        self.repos.get_changeset=lambda rev: Mock(author='joe', date=99)
 
         module = BuildConfigController(self.env)
         assert module.match_request(req)
@@ -153,10 +172,9 @@ class BuildConfigControllerTestCase(AbstractWebUITestCase):
         root = Mock(get_entries=lambda: ['foo'],
                     get_history=lambda: [('trunk', rev, 'edit') for rev in
                                           range(123, 110, -1)])
-        self.repos = Mock(get_node=lambda path, rev=None: root,
-                          sync=lambda: None, normalize_path=lambda path: path,
-                          normalize_rev=lambda rev: rev, youngest_rev=123)
-        self.repos.authz = Mock(has_permission=lambda path: True, assert_permission=lambda path: None)
+        self.repos.get_node=lambda path, rev=None: root
+        self.repos.youngest_rev=123
+        self.repos.get_changeset=lambda rev: Mock(author='joe', date=99)
 
         module = BuildConfigController(self.env)
         assert module.match_request(req)
@@ -204,12 +222,8 @@ class BuildControllerTestCase(AbstractWebUITestCase):
         root = Mock(get_entries=lambda: ['foo'],
                     get_history=lambda: [('trunk', rev, 'edit') for rev in
                                           range(123, 111, -1)])
-        self.repos = Mock(get_node=lambda path, rev=None: root,
-                          sync=lambda: None,
-                          normalize_path=lambda path: path,
-                          normalize_rev=lambda rev: rev,
-                          get_changeset=lambda rev: Mock(author='joe'))
-        self.repos.authz = Mock(has_permission=lambda path: True, assert_permission=lambda path: None)
+        self.repos.get_node=lambda path, rev=None: root
+        self.repos.get_changeset=lambda rev: Mock(author='joe')
 
         module = BuildController(self.env)
         assert module.match_request(req)
@@ -217,7 +231,6 @@ class BuildControllerTestCase(AbstractWebUITestCase):
 
         self.assertEqual('view_build', data['page_mode'])
 
-        from trac.resource import Resource
         self.assertEquals(Resource('build', 'test/1'), data['context'].resource)
 
         self.assertEquals([], data['build']['attachments']['attachments'])

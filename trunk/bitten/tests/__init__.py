@@ -30,9 +30,10 @@ def suite():
     suite = unittest.TestSuite()
     try:
         import trac
-        suite.addTest(master_suite())
     except ImportError:
         print "\nTrac not installed -- Skipping master tests\n"
+    else:
+        suite.addTest(master_suite())
     import bitten.tests_slave
     suite.addTest(bitten.tests_slave.suite())
     return suite

@@ -98,6 +98,10 @@ instructions). The pre-defined recipe variables are:
 +-----------------+----------------------------------------------------------+
 | ``${revision}`` | The repository revision being tested                     |
 +-----------------+----------------------------------------------------------+
+| ``${reponame}`` | Then name of the repository as derived from ``path``     |
++-----------------+----------------------------------------------------------+
+| ``${repopath}`` | The ``path`` as seen from inside the repository          |
++-----------------+----------------------------------------------------------+
 | ``${platform}`` | The name of the target platform being built              |
 +-----------------+----------------------------------------------------------+
 | ``${name}``     | The name of the build slave                              |

@@ -23,7 +23,7 @@ from trac.core import *
 from trac.config import Option
 from trac.mimeview.api import Context
 from trac.perm import PermissionError
-from trac.resource import Resource
+from trac.resource import Resource, get_resource_url
 from trac.timeline import ITimelineEventProvider
 from trac.util import escape, pretty_timedelta, format_datetime, shorten_line, \
                       Markup, arity
@@ -40,6 +40,7 @@ from bitten.master import BuildMaster
 from bitten.model import BuildConfig, TargetPlatform, Build, BuildStep, \
                          BuildLog, Report
 from bitten.queue import collect_changes
+from bitten.util.repository import get_repos, get_chgset_resource, display_rev
 from bitten.util import json
 
 _status_label = {Build.PENDING: 'pending',
@@ -54,14 +55,18 @@ _step_status_label = {BuildStep.SUCCESS: 'success',
                       BuildStep.FAILURE: 'failed',
                       BuildStep.IN_PROGRESS: 'in progress'}
 
-def _get_build_data(env, req, build):
+def _get_build_data(env, req, build, repos_name=None):
+    chgset_url = ''
+    if repos_name:
+        chgset_resource = get_chgset_resource(env, repos_name, build.rev)
+        chgset_url = get_resource_url(env, chgset_resource, req.href)
     platform = TargetPlatform.fetch(env, build.platform)
     data = {'id': build.id, 'name': build.slave, 'rev': build.rev,
             'status': _status_label[build.status],
             'platform': getattr(platform, 'name', 'unknown'),
             'cls': _status_label[build.status].replace(' ', '-'),
             'href': req.href.build(build.config, build.id),
-            'chgset_href': req.href.changeset(build.rev)}
+            'chgset_href': chgset_url}
     if build.started:
         data['started'] = format_datetime(build.started)
         data['started_delta'] = pretty_timedelta(build.started)
@@ -111,13 +116,10 @@ class BittenChrome(Component):
         if 'BUILD_VIEW' in req.perm:
             status = ''
             if BuildMaster(self.env).quick_status:
-                repos = self.env.get_repository(authname=req.authname)
-                assert repos, 'No "(default)" Repository: Add a repository ' \
-                              'or alias named "(default)" to Trac.'
                 for config in BuildConfig.select(self.env,
                                                  include_inactive=False):
                     prev_rev = None
-                    for platform, rev, build in collect_changes(repos, config):
+                    for platform, rev, build in collect_changes(config, req.authname):
                         if rev != prev_rev:
                             if prev_rev is not None:
                                break
@@ -213,15 +215,13 @@ class BuildConfigController(Component):
             show_all = True
         data['show_all'] = show_all
 
-        repos = self.env.get_repository(authname=req.authname)
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
-
         configs = []
         for config in BuildConfig.select(self.env, include_inactive=show_all):
+            repos_name, repos, repos_path = get_repos(self.env, config.path,
+                                                      req.authname)
             rev = config.max_rev or repos.youngest_rev
             try:
-                if not _has_permission(req.perm, repos, config.path, rev=rev):
+                if not _has_permission(req.perm, repos, repos_path, rev=rev):
                     continue
             except NoSuchNode:
                 add_warning(req, "Configuration '%s' points to non-existing "
@@ -265,13 +265,17 @@ class BuildConfigController(Component):
                 continue
 
             prev_rev = None
-            for platform, rev, build in collect_changes(repos, config):
+            for platform, rev, build in collect_changes(config, req.authname):
                 if rev != prev_rev:
                     if prev_rev is None:
                         chgset = repos.get_changeset(rev)
+                        chgset_resource = get_chgset_resource(self.env, 
+                                repos_name, rev)
                         config_data['youngest_rev'] = {
-                            'id': rev, 'href': req.href.changeset(rev),
-                            'display_rev': repos.normalize_rev(rev),
+                            'id': rev,
+                            'href': get_resource_url(self.env, chgset_resource,
+                                                     req.href),
+                            'display_rev': display_rev(repos, rev),
                             'author': chgset.author or 'anonymous',
                             'date': format_datetime(chgset.date),
                             'message': wiki_to_oneliner(
@@ -281,7 +285,7 @@ class BuildConfigController(Component):
                         break
                     prev_rev = rev
                 if build:
-                    build_data = _get_build_data(self.env, req, build)
+                    build_data = _get_build_data(self.env, req, build, repos_name)
                     build_data['platform'] = platform.name
                     config_data['builds'].append(build_data)
                 else:
@@ -310,15 +314,13 @@ class BuildConfigController(Component):
 
         db = self.env.get_db_cnx()
 
-        repos = self.env.get_repository(authname=req.authname)
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
-
         configs = []
         for config in BuildConfig.select(self.env, include_inactive=False):
+            repos_name, repos, repos_path = get_repos(self.env, config.path,
+                                                      req.authname)
             rev = config.max_rev or repos.youngest_rev
             try:
-                if not _has_permission(req.perm, repos, config.path, rev=rev):
+                if not _has_permission(req.perm, repos, repos_path, rev=rev):
                     continue
             except NoSuchNode:
                 add_warning(req, "Configuration '%s' points to non-existing "
@@ -339,9 +341,9 @@ class BuildConfigController(Component):
             for build in sorted(in_progress_builds,
                                 cmp=lambda x, y: int(y.rev_time) - int(x.rev_time)):
                 rev = build.rev
-                build_data = _get_build_data(self.env, req, build)
+                build_data = _get_build_data(self.env, req, build, repos_name)
                 build_data['rev'] = rev
-                build_data['rev_href'] = req.href.changeset(rev)
+                build_data['rev_href'] = build_data['chgset_href']
                 platform = TargetPlatform.fetch(self.env, build.platform)
                 build_data['platform'] = platform.name
                 build_data['steps'] = []
@@ -386,12 +388,12 @@ class BuildConfigController(Component):
             raise HTTPNotFound("Build configuration '%s' does not exist." \
                                 % config_name)
 
-        repos = self.env.get_repository(authname=req.authname)
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
+        repos_name, repos, repos_path = get_repos(self.env, config.path,
+                                                  req.authname)
+
         rev = config.max_rev or repos.youngest_rev
         try:
-            _has_permission(req.perm, repos, config.path, rev=rev,
+            _has_permission(req.perm, repos, repos_path, rev=rev,
                                                         raise_error=True)
         except NoSuchNode:
             raise TracError("Permission checking against repository path %s "
@@ -410,12 +412,25 @@ class BuildConfigController(Component):
         inprogress_builds = list(Build.select(self.env,
                                 config=config.name, status=Build.IN_PROGRESS))
 
+        min_chgset_url = ''
+        if config.min_rev:
+            min_chgset_resource = get_chgset_resource(self.env, repos_name,
+                                                      config.min_rev)
+            min_chgset_url = get_resource_url(self.env, min_chgset_resource,
+                                              req.href),
+        max_chgset_url = ''
+        if config.max_rev:
+            max_chgset_resource = get_chgset_resource(self.env, repos_name,
+                                                      config.max_rev)
+            max_chgset_url = get_resource_url(self.env, max_chgset_resource,
+                                              req.href),
+
         data['config'] = {
             'name': config.name, 'label': config.label, 'path': config.path,
             'min_rev': config.min_rev,
-            'min_rev_href': req.href.changeset(config.min_rev),
+            'min_rev_href': min_chgset_url,
             'max_rev': config.max_rev,
-            'max_rev_href': req.href.changeset(config.max_rev),
+            'max_rev_href': max_chgset_url,
             'active': config.active, 'description': description,
             'browser_href': req.href.browser(config.path),
             'builds_pending' : len(pending_builds),
@@ -465,15 +480,12 @@ class BuildConfigController(Component):
         more = False
         data['page_number'] = page
 
-        repos = self.env.get_repository(authname=req.authname)
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
-
         builds_per_page = 12 * len(platforms)
         idx = 0
         builds = {}
         revisions = []
-        for platform, rev, build in collect_changes(repos, config):
+        build_order = []
+        for platform, rev, build in collect_changes(config,authname=req.authname):
             if idx >= page * builds_per_page:
                 more = True
                 break
@@ -481,8 +493,11 @@ class BuildConfigController(Component):
                 if rev not in builds:
                     revisions.append(rev)
                 builds.setdefault(rev, {})
-                builds[rev].setdefault('href', req.href.changeset(rev))
-                builds[rev].setdefault('display_rev', repos.normalize_rev(rev))
+                chgset_resource = get_chgset_resource(self.env, repos_name, rev)
+                builds[rev].setdefault('href', get_resource_url(self.env,
+                                                    chgset_resource, req.href))
+                build_order.append((rev, repos.get_changeset(rev).date))
+                builds[rev].setdefault('display_rev', display_rev(repos, rev))
                 if build and build.status != Build.PENDING:
                     build_data = _get_build_data(self.env, req, build)
                     build_data['steps'] = []
@@ -501,6 +516,9 @@ class BuildConfigController(Component):
                         })
                     builds[rev][platform.id] = build_data
             idx += 1
+        data['config']['build_order'] = [r[0] for r in sorted(build_order,
+                                                            key=lambda x: x[1],
+                                                            reverse=True)]
         data['config']['builds'] = builds
         data['config']['revisions'] = revisions
 
@@ -605,7 +623,12 @@ class BuildController(Component):
             categories = summarizer.get_supported_categories()
             summarizers.update(dict([(cat, summarizer) for cat in categories]))
 
-        data['build'].update(_get_build_data(self.env, req, build))
+        repos_name, repos, repos_path = get_repos(self.env, config.path,
+                                                  req.authname)
+
+        _has_permission(req.perm, repos, repos_path, rev=build.rev, raise_error=True)
+
+        data['build'].update(_get_build_data(self.env, req, build, repos_name))
         steps = []
         for step in BuildStep.select(self.env, build=build.id, db=db):
             steps.append({
@@ -622,13 +645,9 @@ class BuildController(Component):
         data['build']['can_delete'] = ('BUILD_DELETE' in req.perm \
                                    and build.status != build.PENDING)
 
-        repos = self.env.get_repository(authname=req.authname)
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
-        _has_permission(req.perm, repos, config.path, rev=build.rev, raise_error=True)
         chgset = repos.get_changeset(build.rev)
         data['build']['chgset_author'] = chgset.author
-        data['build']['display_rev'] = repos.normalize_rev(build.rev)
+        data['build']['display_rev'] = display_rev(repos, build.rev)
 
         add_script(req, 'common/js/folding.js')
         add_script(req, 'bitten/tabset.js')
@@ -666,15 +685,15 @@ class BuildController(Component):
                        "AND b.status IN (%s, %s) ORDER BY b.stopped",
                        (start, stop, Build.SUCCESS, Build.FAILURE))
 
-        repos = self.env.get_repository(authname=req.authname)
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
-
         event_kinds = {Build.SUCCESS: 'successbuild',
                        Build.FAILURE: 'failedbuild'}
 
         for id_, config, label, path, rev, platform, stopped, status in cursor:
-            if not _has_permission(req.perm, repos, path, rev=rev):
+            config_object = BuildConfig.fetch(self.env, config, db=db)
+            repos_name, repos, repos_path = get_repos(self.env,
+                                                      config_object.path,
+                                                      req.authname)
+            if not _has_permission(req.perm, repos, repos_path, rev=rev):
                 continue
             errors = []
             if status == Build.FAILURE:
@@ -683,7 +702,7 @@ class BuildController(Component):
                                              db=db):
                     errors += [(step.name, error) for error
                                in step.errors]
-            display_rev = repos.normalize_rev(rev)
+            display_rev = display_rev(repos, rev)
             yield (event_kinds[status], to_datetime(stopped, utc), None,
                         (id_, config, label, display_rev, platform, status,
                          errors))
@@ -819,9 +838,8 @@ class SourceFileLinkFormatter(Component):
     def get_formatter(self, req, build):
         """Return the log message formatter function."""
         config = BuildConfig.fetch(self.env, name=build.config)
-        repos = self.env.get_repository(authname=req.authname)
-        assert repos, 'No "(default)" Repository: Add a repository or alias ' \
-                      'named "(default)" to Trac.'
+        repos_name, repos, repos_path = get_repos(self.env, config.path,
+                                                  req.authname)
         href = req.href.browser
         cache = {}
 

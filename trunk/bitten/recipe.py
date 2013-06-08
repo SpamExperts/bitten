@@ -254,7 +254,7 @@ class Recipe(object):
     REPORT = 'report'
     ATTACH = 'attach'
 
-    def __init__(self, xml, basedir=os.getcwd(), config=None):
+    def __init__(self, xml, basedir=None, config=None):
         """Create the recipe.
         
         :param xml: the XML document representing the recipe
@@ -263,6 +263,9 @@ class Recipe(object):
         :param config: the slave configuration (optional)
         :type config: `Configuration`
         """
+        if basedir == None:
+            basedir=os.getcwd()
+
         assert isinstance(xml, xmlio.ParsedElement)
         vars = dict([(name, value) for name, value in xml.attr.items()
                      if not name.startswith('xmlns')])

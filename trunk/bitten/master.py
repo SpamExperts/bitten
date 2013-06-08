@@ -29,6 +29,8 @@ from bitten.main import BuildSystem
 from bitten.queue import BuildQueue
 from bitten.recipe import Recipe
 from bitten.util import xmlio
+from bitten.util.repository import get_repos
+
 
 __all__ = ['BuildMaster']
 __docformat__ = 'restructuredtext en'
@@ -254,6 +256,8 @@ class BuildMaster(Component):
         for listener in BuildSystem(self.env).listeners:
             listener.build_started(build)
 
+        repos_name, repos, repos_path = get_repos(
+                                self.env, config.path, req.authname)
         xml = xmlio.parse(config.recipe)
         xml.attr['path'] = config.path
         xml.attr['revision'] = build.rev
@@ -263,6 +267,8 @@ class BuildMaster(Component):
         xml.attr['platform'] = target_platform.name
         xml.attr['name'] = build.slave
         xml.attr['form_token'] = req.form_token # For posting attachments
+        xml.attr['reponame'] = repos_name != '(default)' and repos_name or ''
+        xml.attr['repopath'] = repos_path.strip('/')
         body = str(xml)
 
         self.log.info('Build slave %r initiated build %d', build.slave,
