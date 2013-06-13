@@ -702,10 +702,9 @@ class BuildController(Component):
                                              db=db):
                     errors += [(step.name, error) for error
                                in step.errors]
-            display_rev = display_rev(repos, rev)
             yield (event_kinds[status], to_datetime(stopped, utc), None,
-                        (id_, config, label, display_rev, platform, status,
-                         errors))
+                        (id_, config, label, display_rev(repos, rev), platform,
+                            status, errors))
 
     def render_timeline_event(self, context, field, event):
         id_, config, label, rev, platform, status, errors = event[3]
