@@ -17,7 +17,7 @@ from trac.web.api import IRequestFilter
 from trac.web.chrome import add_stylesheet, add_ctxtnav, add_warning
 from bitten.api import IReportChartGenerator, IReportSummarizer
 from bitten.model import BuildConfig, Build, Report
-from bitten.util.repository import get_repos
+from bitten.util.repository import get_repos, get_resource_path
 
 __docformat__ = 'restructuredtext en'
 
@@ -157,9 +157,9 @@ class TestCoverageAnnotator(Component):
             add_ctxtnav(req, tag.a('Coverage',
                     title='Annotate file with test coverage '
                           'data (if available)',
-                    href=req.href.browser(resource.id, 
+                    href=req.href.browser(get_resource_path(resource),
                         annotate='coverage', rev=req.args.get('rev'),
-                        created=data.get('rev')),
+                        created=data.get('created_rev') or data.get('rev')),
                     rel='nofollow'))
         return template, data, content_type
 
@@ -186,8 +186,7 @@ class TestCoverageAnnotator(Component):
             created_time = to_timestamp(repos.get_changeset(created).date)
         else:
             created_time = version_time
-        full_path = ("%s/%s" % (resource.parent and resource.parent.id or '',
-                                resource.id.lstrip('/'))).lstrip('/')
+        full_path = get_resource_path(resource)
 
         self.log.debug("Looking for coverage report for %s@%s [%s:%s]..." % (
                         full_path, str(resource.version), created, version))

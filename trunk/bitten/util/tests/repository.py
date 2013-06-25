@@ -12,9 +12,10 @@
 # history and logs, available at http://trac.edgewall.org/log/.
 
 import unittest
+from trac.resource import Resource
 from trac.test import Mock
 
-from bitten.util.repository import display_rev
+from bitten.util.repository import display_rev, get_resource_path
 
 
 class DisplayRevTestCase(unittest.TestCase):
@@ -31,9 +32,27 @@ class DisplayRevTestCase(unittest.TestCase):
         self.assertEquals('123456', display_rev(repos, rev))
 
 
+class GetResourcePathTestCase(unittest.TestCase):
+
+    def test_wihout_parent(self):
+        resource = Resource('source', '/some/path', '123', parent=None)
+        self.assertEquals("some/path", get_resource_path(resource))
+
+    def test_parent_without_name(self):
+        resource = Resource('source', '/some/path', '123',
+                             parent=Resource('repository', ''))
+        self.assertEquals("some/path", get_resource_path(resource))
+
+    def test_parent(self):
+        resource = Resource('source', '/some/path', '123',
+                             parent=Resource('repository', 'foo'))
+        self.assertEquals("foo/some/path", get_resource_path(resource))
+
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(DisplayRevTestCase))
+    suite.addTest(unittest.makeSuite(GetResourcePathTestCase))
     return suite
 
 

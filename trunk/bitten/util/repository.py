@@ -55,3 +55,9 @@ def display_rev(repos, rev):
     if hasattr(repos, 'display_rev'):
         return repos.display_rev(rev)
     return repos.normalize_rev(rev)
+
+def get_resource_path(resource):
+    """ Return the full path for the resource (with or without a parent).
+    """
+    return ("%s/%s" % (resource.parent and resource.parent.id or '',
+                                resource.id.lstrip('/'))).lstrip('/')
