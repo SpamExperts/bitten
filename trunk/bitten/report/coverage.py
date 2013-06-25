@@ -186,9 +186,11 @@ class TestCoverageAnnotator(Component):
             created_time = to_timestamp(repos.get_changeset(created).date)
         else:
             created_time = version_time
+        full_path = ("%s/%s" % (resource.parent and resource.parent.id or '',
+                                resource.id.lstrip('/'))).lstrip('/')
 
         self.log.debug("Looking for coverage report for %s@%s [%s:%s]..." % (
-                        resource.id, str(resource.version), created, version))
+                        full_path, str(resource.version), created, version))
 
         db = self.env.get_db_cnx()
         cursor = db.cursor()
@@ -206,7 +208,7 @@ class TestCoverageAnnotator(Component):
                     AND i1.name='file'
                     AND """ + db.concat('c.path', "'/'", 'i1.value') + """=%s
                 ORDER BY b.rev_time DESC LIMIT 1""" ,
-            (created_time, version_time, resource.id.lstrip('/')))
+            (created_time, version_time, full_path))
 
         row = cursor.fetchone()
         if row:
