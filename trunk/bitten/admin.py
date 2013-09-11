@@ -20,7 +20,8 @@ from trac.versioncontrol.api import RepositoryManager
 from bitten import __multirepos__
 from bitten.model import BuildConfig, TargetPlatform
 from bitten.recipe import Recipe, InvalidRecipeError
-from bitten.util import xmlio, get_repos
+from bitten.util import xmlio
+from bitten.util.repository import get_repos
 
 
 class BuildMasterAdminPageProvider(Component):
