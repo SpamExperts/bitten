@@ -175,18 +175,18 @@ class TestCoverageAnnotator(Component):
 
         # attempt to use the version passed in with the request,
         # otherwise fall back to the latest version of this file.
-        version = context.req.args.get('rev', resource.version)
+        version = context.req.args.get('rev') or resource.version
         # get the last change revision for the file so that we can
         # pick coverage data as latest(version >= file_revision)
-        created = context.req.args.get('created', resource.version)
+        created = context.req.args.get('created') or resource.version
 
-        _name, repos, _path = get_repos(self.env, resource.id, None)
+        full_path = get_resource_path(resource)
+        _name, repos, _path = get_repos(self.env, full_path, None)
         version_time = to_timestamp(repos.get_changeset(version).date)
         if version != created:
             created_time = to_timestamp(repos.get_changeset(created).date)
         else:
             created_time = version_time
-        full_path = get_resource_path(resource)
 
         self.log.debug("Looking for coverage report for %s@%s [%s:%s]..." % (
                         full_path, str(resource.version), created, version))
