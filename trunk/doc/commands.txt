@@ -621,6 +621,31 @@ Examples
 
   <php:coverage file="build/coverage.xml" />
 
+-------------------
+``<php:phpcs>``
+-------------------
+
+Extracts information from CodeSniffer_ reports.
+
+.. _codesniffer: http://pear.php.net/package/PHP_CodeSniffer
+
+Parameters
+----------
+
++--------------+-------------------------------------------------------------+
+| Name         | Description                                                 |
++==============+=============================================================+
+| ``file``     | Path to the file containing the CodeSniffer output, relative|
+|              | to the project source directory.                            |
++--------------+-------------------------------------------------------------+
+
+Examples
+--------
+
+.. code-block:: xml
+
+  <php:phpcs file="phpcs.out" />
+
 
 Python Tools
 ============

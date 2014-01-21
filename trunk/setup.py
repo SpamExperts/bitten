@@ -42,6 +42,7 @@ tools = [
         'java#junit = bitten.build.javatools:junit',
         'java#cobertura = bitten.build.javatools:cobertura',
         'php#phing = bitten.build.phptools:phing',
+        'php#phpcs = bitten.build.phptools:phpcs',
         'php#phpunit = bitten.build.phptools:phpunit',
         'php#coverage = bitten.build.phptools:coverage',
         'python#coverage = bitten.build.pythontools:coverage',

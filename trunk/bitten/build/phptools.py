@@ -34,6 +34,50 @@ def phing(ctxt, file_=None, target=None, executable=None, args=None):
     if returncode != 0:
         ctxt.error('Phing failed (%s)' % returncode)
 
+def phpcs(ctxt, file_=None):
+    """Extract test results from a PHP Code Sniffer full report."""
+    assert file_, 'Missing required attribute "file"'
+    msg_categories = dict(WARNING='warning', ERROR='error')
+    
+    problems = xmlio.Fragment()
+    try:
+        fd = open(ctxt.resolve(file_), 'r')
+        try:
+            filename = None
+            for line in fd:
+                line = line.strip()
+                if (not line or line.startswith("-") or 
+                    line.startswith("FOUND")):
+                    continue
+                if line.startswith("FILE:"):
+                    filename = line.split(":")[1].strip()
+                    filename = filename.replace('\\', '/')
+                    if (os.path.isabs(filename) and 
+                        filename.startswith(ctxt.basedir)):
+                        filename = filename[len(ctxt.basedir) + 1:]
+                    continue
+                parts = line.split("|")
+                if len(parts) != 3 or not parts[0]:
+                    continue
+                
+                lineno = int(parts[0].strip())
+                type = msg_categories[parts[1].strip()]
+                tag = type
+                category = type
+                msg = parts[2].strip()
+                problems.append(xmlio.Element('problem', category=category,
+                                              type=type, tag=tag,
+                                              line=lineno, file=filename)[
+                                  xmlio.Element('msg')[msg]])
+            ctxt.report('lint', problems)
+        except Exception, e:
+            log.warning('Error parsing phpcs report file (%s)', e)
+        finally:
+            fd.close()
+    except IOError, e:
+        log.warning('Error opening phpcs report file (%s)', e)
+    
+
 def phpunit(ctxt, file_=None):
     """Extract test results from a PHPUnit XML report."""
     assert file_, 'Missing required attribute "file"'

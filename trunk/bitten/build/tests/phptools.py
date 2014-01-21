@@ -16,6 +16,134 @@ import unittest
 from bitten.build import phptools
 from bitten.recipe import Context, Recipe
 
+class PhpCodeSnifferTestCase(unittest.TestCase):
+
+    def setUp(self):
+        self.basedir = os.path.realpath(tempfile.mkdtemp())
+        self.ctxt = Context(self.basedir)
+        self.summary = open(os.path.join(self.basedir, '.phpcs'), 'w')
+
+    def tearDown(self):
+        shutil.rmtree(self.basedir)
+
+    def test_missing_param_file(self):
+        self.summary.close()
+        self.assertRaises(AssertionError, phptools.phpcs, self.ctxt)
+
+    def test_empty_summary(self):
+        self.summary.close()
+        phptools.phpcs(self.ctxt, file_=self.summary.name)
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual(Recipe.REPORT, type)
+        self.assertEqual('lint', category)
+        self.assertEqual(0, len(xml.children))
+
+    def test_summary_format(self):
+        # thoroughly check on report line
+        self.summary.write("""
+FILE: %s/module/file1.php
+-------------------------------------------------------------------------------
+FOUND 1 ERROR(S) AND 1 WARNING(S) AFFECTING 2 LINE(S)
+-------------------------------------------------------------------------------
+  1 | ERROR   | You must use "/**" style comments for a file comment
+ 15 | WARNING | Line exceeds 85 characters; contains 118 characters
+-------------------------------------------------------------------------------
+
+""" % (self.ctxt.basedir,))
+        self.summary.close()
+        phptools.phpcs(self.ctxt, file_=self.summary.name)
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual(Recipe.REPORT, type)
+        self.assertEqual('lint', category)
+        self.assertEqual(2, len(xml.children))
+        
+        child = xml.children[0]
+        self.assertEqual('problem', child.name)
+        self.assertEqual('module/file1.php', child.attr['file'])
+        self.assertEqual('error', child.attr['category'])
+        self.assertEqual(1, child.attr['line'])
+        self.assertEqual(1, len(child.children))
+        msg = child.children[0]
+        self.assertEqual('msg', msg.name)
+        self.assertEqual(1, len(msg.children))
+        self.assertEqual('You must use "/**" style comments for a '
+                         'file comment', msg.children[0])
+        
+        child = xml.children[1]
+        self.assertEqual('problem', child.name)
+        self.assertEqual('module/file1.php', child.attr['file'])
+        self.assertEqual('warning', child.attr['category'])
+        self.assertEqual(15, child.attr["line"])
+        self.assertEqual(1, len(child.children))
+        msg = child.children[0]
+        self.assertEqual('msg', msg.name)
+        self.assertEqual(1, len(msg.children))
+        self.assertEqual('Line exceeds 85 characters; contains 118 characters'
+                         , msg.children[0])
+
+    def test_summary_with_absolute_path(self):
+        # One posix + one windows path to normalize
+        self.summary.write("""
+FILE: %s/module/file1.php
+-------------------------------------------------------------------------------
+FOUND 1 ERROR(S) AFFECTING 1 LINE(S)
+-------------------------------------------------------------------------------
+ 1 | ERROR | You must use "/**" style comments for a file comment
+-------------------------------------------------------------------------------
+
+FILE: %s\\module\\file2.php
+-------------------------------------------------------------------------------
+FOUND 1 WARNING(S) AFFECTING 1 LINE(S)
+-------------------------------------------------------------------------------
+ 15 | WARNING | Line exceeds 85 characters; contains 118 characters
+-------------------------------------------------------------------------------
+
+""" % (self.ctxt.basedir, self.ctxt.basedir))
+        self.summary.close()
+        phptools.phpcs(self.ctxt, file_=self.summary.name)
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual(Recipe.REPORT, type)
+        self.assertEqual('lint', category)
+        self.assertEqual(2, len(xml.children))
+        child = xml.children[0]
+        self.assertEqual('problem', child.name)
+        self.assertEqual('module/file1.php', child.attr['file'])
+        child = xml.children[1]
+        self.assertEqual('problem', child.name)
+        self.assertEqual('module/file2.php', child.attr['file'])
+ 
+    def test_summary_with_relative_path(self):
+        # One posix + one windows path to normalize
+        self.summary.write("""
+FILE: module/file1.php
+-------------------------------------------------------------------------------
+FOUND 1 ERROR(S) AFFECTING 1 LINE(S)
+-------------------------------------------------------------------------------
+ 1 | ERROR | You must use "/**" style comments for a file comment
+-------------------------------------------------------------------------------
+
+FILE: module\\file2.php
+-------------------------------------------------------------------------------
+FOUND 1 WARNING(S) AFFECTING 1 LINE(S)
+-------------------------------------------------------------------------------
+ 15 | WARNING | Line exceeds 85 characters; contains 118 characters
+-------------------------------------------------------------------------------
+
+""")
+        self.summary.close()
+        phptools.phpcs(self.ctxt, file_=self.summary.name)
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual(Recipe.REPORT, type)
+        self.assertEqual('lint', category)
+        self.assertEqual(2, len(xml.children))
+        child = xml.children[0]
+        self.assertEqual('problem', child.name)
+        self.assertEqual('module/file1.php', child.attr['file'])
+        child = xml.children[1]
+        self.assertEqual('problem', child.name)
+        self.assertEqual('module/file2.php', child.attr['file'])
+
+
 class PhpUnitTestCase(unittest.TestCase):
 
     def setUp(self):
@@ -247,6 +375,7 @@ def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(PhpUnitTestCase, 'test'))
     suite.addTest(unittest.makeSuite(PhpCodeCoverageTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(PhpCodeSnifferTestCase, 'test'))
     return suite
 
 if __name__ == '__main__':
