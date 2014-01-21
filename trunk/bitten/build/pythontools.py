@@ -207,6 +207,28 @@ def coverage(ctxt, summary=None, coverdir=None, include=None, exclude=None):
         missing_files.append(filename)
     covered_modules = set()
 
+    def handle_file(element, modname):
+        if not coverdir:
+            return
+        fp = ctxt.resolve(os.path.join(coverdir, modname.replace(".", "_") + 
+                                       ".py,cover"))
+        if not os.path.exists(fp):
+            log.info("No line by line coverage available for %s", modname)
+            return
+        try:
+            with open(fp) as f:
+                lines = []
+                for line in f:
+                    if line.startswith(">"):
+                        lines.append("1")
+                    elif line.startswith("!"):
+                        lines.append("0")
+                    else:
+                        lines.append("-")
+                element.append(xmlio.Element('line_hits')[' '.join(lines)])
+        except Exception, e:
+            log.info("Error while processing line by line coverage: %s", e)
+
     try:
         summary_file = open(ctxt.resolve(summary), 'r')
         try:
@@ -237,6 +259,7 @@ def coverage(ctxt, summary=None, coverdir=None, include=None, exclude=None):
                                            percentage=percentage,
                                            lines=num_lines)
                     coverage.append(module)
+                    handle_file(module, modname)
 
             for filename in missing_files:
                 modname = os.path.splitext(filename.replace(os.sep, '.'))[0]

@@ -29,6 +29,8 @@ class CoverageTestCase(unittest.TestCase):
                             'w')
         self.coverdir = os.path.join(self.basedir, 'coverage')
         os.mkdir(self.coverdir)
+        self.coverfile = open(os.path.join(self.coverdir, 
+                                           'test_module.py,cover'), 'w')
 
     def tearDown(self):
         shutil.rmtree(self.basedir)
@@ -121,6 +123,85 @@ test.module     28     26    92%   13-14 ./test/module.py
         self.assertEqual(92, child.attr['percentage'])
         self.assertEqual(28, child.attr['lines'])
 
+    def test_line_hits_with_absolute_path(self):
+        self.summary.write("""
+Name         Stmts    Exec  Cover   Missing
+-------------------------------------------
+test.module     60      60   100%% %s/test/module.py
+""" % self.ctxt.basedir)
+        self.summary.close()
+        self.coverfile.write("""> import sys
+
+> guido = True
+> if guido:
+>     print "Hello world!"
+! else:
+!     print "Goodbye world!"
+
+> sys.exit()
+! print "What?" 
+
+""")
+        self.coverfile.close()
+        self._create_file('test', 'module.py')
+        pythontools.coverage(self.ctxt, summary=self.summary.name,
+                             include='test/*', coverdir='coverage')
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual(Recipe.REPORT, type)
+        self.assertEqual('coverage', category)
+        self.assertEqual(1, len(xml.children))
+        child = xml.children[0].children[0]
+        self.assertEqual('line_hits', child.name)
+        self.assertEqual('1 - 1 1 1 0 0 - 1 0 -', child.children[0])
+
+    def test_line_hits_with_relative_path(self):
+        self.summary.write("""
+Name         Stmts    Exec  Cover   Missing
+-------------------------------------------
+test.module     60      60   100% ./test/module.py
+""")
+        self.summary.close()        
+        self.coverfile.write("""> import sys
+
+> guido = True
+> if guido:
+>     print "Hello world!"
+! else:
+!     print "Goodbye world!"
+
+> sys.exit()
+! print "What?" 
+
+""")
+        self.coverfile.close()
+        self._create_file('test', 'module.py')
+        pythontools.coverage(self.ctxt, summary=self.summary.name,
+                             include='test/*', coverdir='coverage')
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual(Recipe.REPORT, type)
+        self.assertEqual('coverage', category)
+        self.assertEqual(1, len(xml.children))
+        child = xml.children[0].children[0]
+        self.assertEqual('line_hits', child.name)
+        self.assertEqual('1 - 1 1 1 0 0 - 1 0 -', child.children[0])
+
+    def test_line_hits_with_missing_file(self):
+        self.summary.write("""
+Name         Stmts    Exec  Cover   Missing
+-------------------------------------------
+test.module2     60      60   100%% %s/test/module2.py
+""" % self.ctxt.basedir)
+        self.summary.close()
+        self.coverfile.close()
+        self._create_file('test', 'module2.py')
+        
+        pythontools.coverage(self.ctxt, summary=self.summary.name,
+                             include='test/*', coverdir='coverage')
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual(Recipe.REPORT, type)
+        self.assertEqual('coverage', category)
+        self.assertEqual(1, len(xml.children))
+        self.assertEqual(0, len(xml.children[0].children))
 
 class TraceTestCase(unittest.TestCase):
 
