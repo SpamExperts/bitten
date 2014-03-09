@@ -50,11 +50,11 @@ def phpcs(ctxt, file_=None):
                     line.startswith("FOUND")):
                     continue
                 if line.startswith("FILE:"):
-                    filename = line.split(":")[1].strip()
-                    filename = filename.replace('\\', '/')
+                    filename = line.split(":", 1)[1].strip()
                     if (os.path.isabs(filename) and 
                         filename.startswith(ctxt.basedir)):
                         filename = filename[len(ctxt.basedir) + 1:]
+                    filename = filename.replace('\\', '/')
                     continue
                 parts = line.split("|")
                 if len(parts) != 3 or not parts[0]:
