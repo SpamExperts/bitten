@@ -10,6 +10,12 @@
 
 import unittest
 
+try:
+    import trac
+    has_trac = True
+except ImportError:
+    print "\nTrac not installed -- Skipping master tests\n"
+    has_trac = False
 
 def master_suite():
     from bitten.tests import admin, master, model, queue, web_ui, notify, \
@@ -28,11 +34,7 @@ def master_suite():
 
 def suite():
     suite = unittest.TestSuite()
-    try:
-        import trac
-    except ImportError:
-        print "\nTrac not installed -- Skipping master tests\n"
-    else:
+    if has_trac:
         suite.addTest(master_suite())
     import bitten.tests_slave
     suite.addTest(bitten.tests_slave.suite())

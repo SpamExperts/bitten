@@ -14,14 +14,18 @@ import unittest
 from bitten.util import xmlio as xmlio_module
 from bitten.util.tests import xmlio as xmlio_tests
 from bitten.util.tests import json as json_tests
-from bitten.util.tests import repository as repository_tests
+
+from bitten.tests import has_trac
+if has_trac:
+    from bitten.util.tests import repository as repository_tests
 
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(doctest.DocTestSuite(xmlio_module))
     suite.addTest(json_tests.suite())
     suite.addTest(xmlio_tests.suite())
-    suite.addTest(repository_tests.suite())
+    if has_trac:
+        suite.addTest(repository_tests.suite())
     return suite
 
 if __name__ == '__main__':
