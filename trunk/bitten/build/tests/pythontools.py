@@ -29,8 +29,6 @@ class CoverageTestCase(unittest.TestCase):
                             'w')
         self.coverdir = os.path.join(self.basedir, 'coverage')
         os.mkdir(self.coverdir)
-        self.coverfile = open(os.path.join(self.coverdir, 
-                                           'test_module.py,cover'), 'w')
 
     def tearDown(self):
         shutil.rmtree(self.basedir)
@@ -130,7 +128,9 @@ Name         Stmts    Exec  Cover   Missing
 test.module     60      60   100%% %s/test/module.py
 """ % self.ctxt.basedir)
         self.summary.close()
-        self.coverfile.write("""> import sys
+        coverfile = open(os.path.join(self.coverdir, 
+                                           'test_module.py,cover'), 'w')
+        coverfile.write("""> import sys
 
 > guido = True
 > if guido:
@@ -142,7 +142,7 @@ test.module     60      60   100%% %s/test/module.py
 ! print "What?" 
 
 """)
-        self.coverfile.close()
+        coverfile.close()
         self._create_file('test', 'module.py')
         pythontools.coverage(self.ctxt, summary=self.summary.name,
                              include='test/*', coverdir='coverage')
@@ -161,7 +161,9 @@ Name         Stmts    Exec  Cover   Missing
 test.module     60      60   100% ./test/module.py
 """)
         self.summary.close()        
-        self.coverfile.write("""> import sys
+        coverfile = open(os.path.join(self.coverdir, 
+                                           'test_module.py,cover'), 'w')
+        coverfile.write("""> import sys
 
 > guido = True
 > if guido:
@@ -173,7 +175,7 @@ test.module     60      60   100% ./test/module.py
 ! print "What?" 
 
 """)
-        self.coverfile.close()
+        coverfile.close()
         self._create_file('test', 'module.py')
         pythontools.coverage(self.ctxt, summary=self.summary.name,
                              include='test/*', coverdir='coverage')
@@ -192,7 +194,6 @@ Name         Stmts    Exec  Cover   Missing
 test.module2     60      60   100%% %s/test/module2.py
 """ % self.ctxt.basedir)
         self.summary.close()
-        self.coverfile.close()
         self._create_file('test', 'module2.py')
         
         pythontools.coverage(self.ctxt, summary=self.summary.name,
