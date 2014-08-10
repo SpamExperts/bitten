@@ -337,7 +337,7 @@ def gcov(ctxt, include=None, exclude=None, prefix=None, root=""):
 
         num_lines, num_covered = 0, 0
         skip_block = False
-        cmd = CommandLine('gcov', ['-b', '-n', '-o', objfile, srcfile],
+        cmd = CommandLine('gcov', ['-o', objfile, srcfile],
                           cwd=ctxt.basedir)
         for out, err in cmd.execute():
             if out == '': # catch blank lines, reset the block state...
@@ -360,9 +360,17 @@ def gcov(ctxt, include=None, exclude=None, prefix=None, root=""):
         if cmd.returncode != 0:
             continue
 
+        gcov_file = ctxt.resolve( os.path.join( root, filename + '.gcov' ) )
+        if os.path.isfile( gcov_file ):
+            line_hits = line_hits_from_gcov(gcov_file, info, warning)
+        else:
+            line_hits = []
+            warning ('No .gcov file found for %s at %s' % (srcfile, gcov_file))
+
         module = xmlio.Element('coverage', name=os.path.basename(srcfile),
                                 file=srcfile.replace(os.sep, '/'),
-                                lines=num_lines, percentage=0)
+                                lines=num_lines, percentage=0,
+                                line_hits=' '.join(line_hits))
         if num_lines:
             percent = int(round(num_covered * 100 / num_lines))
             module.attr['percentage'] = percent
@@ -370,3 +378,38 @@ def gcov(ctxt, include=None, exclude=None, prefix=None, root=""):
 
     ctxt.report('coverage', coverage)
     ctxt.log (log_elem)
+
+def line_hits_from_gcov(gcov_file, info, warning):
+    """Read per line statistics from a .gcov file and transform to line_hits
+    
+    :param gcov_file: path to the file to read from
+    :param info: function for info output
+    :param warning: function for warning output
+    """
+    info ("Getting per line coverage of %s" % gcov_file)
+    with open(gcov_file, 'r') as coverageFile: 
+        pattern = re.compile('([\d#=-]+)[:\ ]+(\d+)')
+        line_hits = []
+        for gcov_file_line_number, line in enumerate(coverageFile):
+            match = pattern.search(line)
+            # ignore malformed lines
+            if not match:
+                warning ('Could not parse line %i in %s: %s' % (gcov_file_line_number, gcov_file, line))
+                # mark this line as unknown
+                line_hits.append('???')
+                continue
+            match = match.groups()
+    
+            source_line_execution_count = match[0]
+            source_file_line_number = match[1]
+    
+            if(int(source_file_line_number) > 0):
+                if source_line_execution_count == '-':
+                    line_hits.append('-')
+                elif source_line_execution_count == '#####' or source_line_execution_count == '=====':
+                    line_hits.append('0')
+                else:
+                    line_hits.append(source_line_execution_count)
+        return line_hits
+    warning('Could not gather per line information of %s' % (gcov_file))
+    return []

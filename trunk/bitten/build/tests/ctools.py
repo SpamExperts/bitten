@@ -94,12 +94,14 @@ class GCovTestCase(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.basedir)
 
-    def _create_file(self, *path):
+    def _create_file(self, *path, **kwargs):
         filename = os.path.join(self.basedir, *path)
         dirname = os.path.dirname(filename)
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
         fd = file(filename, 'w')
+        if 'content' in kwargs:
+            fd.write(kwargs['content'])
         fd.close()
         return filename[len(self.basedir) + 1:]
 
@@ -144,7 +146,119 @@ Calls executed:100.00% of 1
         self.assertEqual('foo.c', elem.attr['name'])
         self.assertEqual(888, elem.attr['lines'])
         self.assertEqual(45, elem.attr['percentage'])
+        
+    def test_unreached_exceptional_path_is_zero(self):
+        self._create_file('foo.cpp')
+        self._create_file('foo.o')
+        self._create_file('foo.gcno')
+        self._create_file('foo.gcda')
+        self._create_file('foo.cpp.gcov', content="""        -:    0:Source:foo.cpp
+        -:    0:Graph:./foo.gcno
+        -:    0:Data:./foo.gcda
+        -:    0:Runs:1
+        -:    0:Programs:1
+        -:    1:#include <iostream>
+        -:    2:
+        1:    3:int main() {
+        -:    4:    try {
+        1:    5:        std::cout << "No exception!";
+    =====:    6:    } catch(const std::exception &) {
+    =====:    7:        std::cout << "Exception!";
+        -:    8:    }
+        4:    9:}
+""")
+        ctools.CommandLine = dummy.CommandLine(stdout="""
+File 'foo.cpp'
+Lines executed:60.00% of 5
+Creating 'foo.cpp.gcov'
 
+File '/usr/include/c++/4.9.1/iostream'
+Lines executed:100.00% of 1
+Creating 'iostream.gcov'
+
+File '/usr/include/c++/4.9.1/bits/basic_ios.h'
+No executable lines
+Removing 'basic_ios.h.gcov'
+
+File '/usr/include/c++/4.9.1/ostream'
+No executable lines
+Removing 'ostream.gcov'
+
+File '/usr/include/c++/4.9.1/bits/ios_base.h'
+Lines executed:0.00% of 2
+Creating 'ios_base.h.gcov'
+
+File '/usr/include/c++/4.9.1/bits/char_traits.h'
+Lines executed:0.00% of 2
+Creating 'char_traits.h.gcov'
+""")
+        ctools.gcov(self.ctxt)
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual('log', type)
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual('report', type)
+        self.assertEqual('coverage', category)
+        self.assertEqual(1, len(xml.children))
+        elem = xml.children[0]
+        self.assertEqual('coverage', elem.name)
+        self.assertEqual('- - 1 - 1 0 0 - 4', elem.attr['line_hits'])
+        
+    def test_mark_unknown_lines(self):
+        self._create_file('foo.cpp')
+        self._create_file('foo.o')
+        self._create_file('foo.gcno')
+        self._create_file('foo.gcda')
+        # changed line 2 to include unknown text
+        self._create_file('foo.cpp.gcov', content="""        -:    0:Source:foo.cpp
+        -:    0:Graph:./foo.gcno
+        -:    0:Data:./foo.gcda
+        -:    0:Runs:1
+        -:    0:Programs:1
+        -:    1:#include <iostream>
+        x:    2:
+        1:    3:int main() {
+        -:    4:    try {
+        1:    5:        std::cout << "No exception!";
+    =====:    6:    } catch(const std::exception &) {
+    =====:    7:        std::cout << "Exception!";
+        -:    8:    }
+        4:    9:}
+""")
+        ctools.CommandLine = dummy.CommandLine(stdout="""
+File 'foo.cpp'
+Lines executed:60.00% of 5
+Creating 'foo.cpp.gcov'
+
+File '/usr/include/c++/4.9.1/iostream'
+Lines executed:100.00% of 1
+Creating 'iostream.gcov'
+
+File '/usr/include/c++/4.9.1/bits/basic_ios.h'
+No executable lines
+Removing 'basic_ios.h.gcov'
+
+File '/usr/include/c++/4.9.1/ostream'
+No executable lines
+Removing 'ostream.gcov'
+
+File '/usr/include/c++/4.9.1/bits/ios_base.h'
+Lines executed:0.00% of 2
+Creating 'ios_base.h.gcov'
+
+File '/usr/include/c++/4.9.1/bits/char_traits.h'
+Lines executed:0.00% of 2
+Creating 'char_traits.h.gcov'
+""")
+        ctools.gcov(self.ctxt)
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual('log', type)
+        type, category, generator, xml = self.ctxt.output.pop()
+        self.assertEqual('report', type)
+        self.assertEqual('coverage', category)
+        self.assertEqual(1, len(xml.children))
+        elem = xml.children[0]
+        self.assertEqual('coverage', elem.name)
+        self.assertEqual('- ??? 1 - 1 0 0 - 4', elem.attr['line_hits'])
 
 def suite():
     suite = unittest.TestSuite()
