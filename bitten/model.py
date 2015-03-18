@@ -60,94 +60,79 @@ class BuildConfig(object):
     resource = property(fget=lambda self: Resource('build', '%s' % self.name),
                         doc='Build Config resource identification')
 
-    def delete(self, db=None):
+    def delete(self):
         """Remove a build configuration and all dependent objects from the
         database."""
         assert self.exists, 'Cannot delete non-existing configuration'
-        if not db:
+        with self.env.db_transaction as db:
             db = self.env.get_db_cnx()
             handle_ta = True
-        else:
-            handle_ta = False
 
-        for platform in list(TargetPlatform.select(self.env, self.name, db=db)):
-            platform.delete(db=db)
+            for platform in list(TargetPlatform.select(self.env, self.name, db=db)):
+                platform.delete(db=db)
 
-        for build in list(Build.select(self.env, config=self.name, db=db)):
-            build.delete(db=db)
+            for build in list(Build.select(self.env, config=self.name, db=db)):
+                build.delete(db=db)
 
-        # Delete attachments
-        Attachment.delete_all(self.env, 'build', self.resource.id, db)
+            # Delete attachments
+            Attachment.delete_all(self.env, 'build', self.resource.id, db)
 
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM bitten_config WHERE name=%s", (self.name,))
+            cursor = db.cursor()
+            cursor.execute("DELETE FROM bitten_config WHERE name=%s", (self.name,))
 
-        if handle_ta:
-            db.commit()
+        #commit
         self._old_name = None
 
-    def insert(self, db=None):
+    def insert(self):
         """Insert a new configuration into the database."""
         assert not self.exists, 'Cannot insert existing configuration'
         assert self.name, 'Configuration requires a name'
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
 
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO bitten_config (name,path,active,"
-                       "recipe,min_rev,max_rev,label,description) "
-                       "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                       (self.name, self.path, int(self.active or 0),
-                        self.recipe or '', self.min_rev, self.max_rev,
-                        self.label or '', self.description or ''))
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO bitten_config (name,path,active,"
+                           "recipe,min_rev,max_rev,label,description) "
+                           "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                           (self.name, self.path, int(self.active or 0),
+                            self.recipe or '', self.min_rev, self.max_rev,
+                            self.label or '', self.description or ''))
 
-        if handle_ta:
-            db.commit()
+        #commit
         self._old_name = self.name
 
-    def update(self, db=None):
+    def update(self):
         """Save changes to an existing build configuration."""
         assert self.exists, 'Cannot update a non-existing configuration'
         assert self.name, 'Configuration requires a name'
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
 
-        cursor = db.cursor()
-        cursor.execute("UPDATE bitten_config SET name=%s,path=%s,active=%s,"
-                       "recipe=%s,min_rev=%s,max_rev=%s,label=%s,"
-                       "description=%s WHERE name=%s",
-                       (self.name, self.path, int(self.active or 0),
-                        self.recipe, self.min_rev, self.max_rev,
-                        self.label, self.description, self._old_name))
-        if self.name != self._old_name:
-            cursor.execute("UPDATE bitten_platform SET config=%s "
-                           "WHERE config=%s", (self.name, self._old_name))
-            cursor.execute("UPDATE bitten_build SET config=%s "
-                           "WHERE config=%s", (self.name, self._old_name))
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            cursor.execute("UPDATE bitten_config SET name=%s,path=%s,active=%s,"
+                           "recipe=%s,min_rev=%s,max_rev=%s,label=%s,"
+                           "description=%s WHERE name=%s",
+                           (self.name, self.path, int(self.active or 0),
+                            self.recipe, self.min_rev, self.max_rev,
+                            self.label, self.description, self._old_name))
+            if self.name != self._old_name:
+                cursor.execute("UPDATE bitten_platform SET config=%s "
+                               "WHERE config=%s", (self.name, self._old_name))
+                cursor.execute("UPDATE bitten_build SET config=%s "
+                               "WHERE config=%s", (self.name, self._old_name))
 
-        if handle_ta:
-            db.commit()
+        #commit
         self._old_name = self.name
 
-    def fetch(cls, env, name, db=None):
+    def fetch(cls, env, name):
         """Retrieve an existing build configuration from the database by
         name.
         """
-        if not db:
-            db = env.get_db_cnx()
-
-        cursor = db.cursor()
-        cursor.execute("SELECT path,active,recipe,min_rev,max_rev,label,"
-                       "description FROM bitten_config WHERE name=%s", (name,))
-        row = cursor.fetchone()
-        if not row:
-            return None
+        with env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT path,active,recipe,min_rev,max_rev,label,"
+                           "description FROM bitten_config WHERE name=%s", (name,))
+            row = cursor.fetchone()
+            if not row:
+                return None
 
         config = BuildConfig(env)
         config.name = config._old_name = name
@@ -162,30 +147,29 @@ class BuildConfig(object):
 
     fetch = classmethod(fetch)
 
-    def select(cls, env, include_inactive=False, db=None):
+    def select(cls, env, include_inactive=False):
         """Retrieve existing build configurations from the database that match
         the specified criteria.
         """
-        if not db:
-            db = env.get_db_cnx()
 
-        cursor = db.cursor()
-        if include_inactive:
-            cursor.execute("SELECT name,path,active,recipe,min_rev,max_rev,"
-                           "label,description FROM bitten_config ORDER BY name")
-        else:
-            cursor.execute("SELECT name,path,active,recipe,min_rev,max_rev,"
-                           "label,description FROM bitten_config "
-                           "WHERE active=1 ORDER BY name")
-        for name, path, active, recipe, min_rev, max_rev, label, description \
-                in cursor:
-            config = BuildConfig(env, name=name, path=path or '',
-                                 active=bool(active), recipe=recipe or '',
-                                 min_rev=min_rev or None,
-                                 max_rev=max_rev or None, label=label or '',
-                                 description=description or '')
-            config._old_name = name
-            yield config
+        with env.db_query as db:
+            cursor = db.cursor()
+            if include_inactive:
+                cursor.execute("SELECT name,path,active,recipe,min_rev,max_rev,"
+                               "label,description FROM bitten_config ORDER BY name")
+            else:
+                cursor.execute("SELECT name,path,active,recipe,min_rev,max_rev,"
+                               "label,description FROM bitten_config "
+                               "WHERE active=1 ORDER BY name")
+            for name, path, active, recipe, min_rev, max_rev, label, description \
+                    in cursor:
+                config = BuildConfig(env, name=name, path=path or '',
+                                     active=bool(active), recipe=recipe or '',
+                                     min_rev=min_rev or None,
+                                     max_rev=max_rev or None, label=label or '',
+                                     description=description or '')
+                config._old_name = name
+                yield config
 
     select = classmethod(select)
 
@@ -249,102 +233,83 @@ class TargetPlatform(object):
     exists = property(fget=lambda self: self.id is not None,
                       doc='Whether this target platform exists in the database')
 
-    def delete(self, db=None):
+    def delete(self):
         """Remove the target platform from the database."""
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
+        with self.env.db_transaction as db:
 
-        for build in Build.select(self.env, platform=self.id, status=Build.PENDING, db=db):
-            build.delete()
+            for build in Build.select(self.env, platform=self.id, status=Build.PENDING, db=db):
+                build.delete()
 
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM bitten_rule WHERE id=%s", (self.id,))
-        cursor.execute("DELETE FROM bitten_platform WHERE id=%s", (self.id,))
-        if handle_ta:
-            db.commit()
+            cursor = db.cursor()
+            cursor.execute("DELETE FROM bitten_rule WHERE id=%s", (self.id,))
+            cursor.execute("DELETE FROM bitten_platform WHERE id=%s", (self.id,))
+        #commit
 
-    def insert(self, db=None):
+    def insert(self):
         """Insert a new target platform into the database."""
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
 
         assert not self.exists, 'Cannot insert existing target platform'
         assert self.config, 'Target platform needs to be associated with a ' \
                             'configuration'
         assert self.name, 'Target platform requires a name'
 
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO bitten_platform (config,name) "
-                       "VALUES (%s,%s)", (self.config, self.name))
-        self.id = db.get_last_id(cursor, 'bitten_platform')
-        if self.rules:
-            cursor.executemany("INSERT INTO bitten_rule VALUES (%s,%s,%s,%s)",
-                               [(self.id, propname, pattern, idx)
-                                for idx, (propname, pattern)
-                                in enumerate(self.rules)])
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO bitten_platform (config,name) "
+                           "VALUES (%s,%s)", (self.config, self.name))
+            self.id = db.get_last_id(cursor, 'bitten_platform')
+            if self.rules:
+                cursor.executemany("INSERT INTO bitten_rule VALUES (%s,%s,%s,%s)",
+                                   [(self.id, propname, pattern, idx)
+                                    for idx, (propname, pattern)
+                                    in enumerate(self.rules)])
 
-        if handle_ta:
-            db.commit()
+        #commit
 
-    def update(self, db=None):
+    def update(self):
         """Save changes to an existing target platform."""
         assert self.exists, 'Cannot update a non-existing platform'
         assert self.config, 'Target platform needs to be associated with a ' \
                             'configuration'
         assert self.name, 'Target platform requires a name'
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
 
-        cursor = db.cursor()
-        cursor.execute("UPDATE bitten_platform SET name=%s WHERE id=%s",
-                       (self.name, self.id))
-        cursor.execute("DELETE FROM bitten_rule WHERE id=%s", (self.id,))
-        if self.rules:
-            cursor.executemany("INSERT INTO bitten_rule VALUES (%s,%s,%s,%s)",
-                               [(self.id, propname, pattern, idx)
-                                for idx, (propname, pattern)
-                                in enumerate(self.rules)])
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            cursor.execute("UPDATE bitten_platform SET name=%s WHERE id=%s",
+                           (self.name, self.id))
+            cursor.execute("DELETE FROM bitten_rule WHERE id=%s", (self.id,))
+            if self.rules:
+                cursor.executemany("INSERT INTO bitten_rule VALUES (%s,%s,%s,%s)",
+                                   [(self.id, propname, pattern, idx)
+                                    for idx, (propname, pattern)
+                                    in enumerate(self.rules)])
 
-        if handle_ta:
-            db.commit()
+        #commit
 
-    def fetch(cls, env, id, db=None):
+    def fetch(cls, env, id):
         """Retrieve an existing target platform from the database by ID."""
-        if not db:
-            db = env.get_db_cnx()
+        with env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT config,name FROM bitten_platform "
+                           "WHERE id=%s", (id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
 
-        cursor = db.cursor()
-        cursor.execute("SELECT config,name FROM bitten_platform "
-                       "WHERE id=%s", (id,))
-        row = cursor.fetchone()
-        if not row:
-            return None
-
-        platform = TargetPlatform(env, config=row[0], name=row[1])
-        platform.id = id
-        cursor.execute("SELECT propname,pattern FROM bitten_rule "
-                       "WHERE id=%s ORDER BY orderno", (id,))
-        for propname, pattern in cursor:
-            platform.rules.append((propname, pattern))
-        return platform
+            platform = TargetPlatform(env, config=row[0], name=row[1])
+            platform.id = id
+            cursor.execute("SELECT propname,pattern FROM bitten_rule "
+                           "WHERE id=%s ORDER BY orderno", (id,))
+            for propname, pattern in cursor:
+                platform.rules.append((propname, pattern))
+            return platform
 
     fetch = classmethod(fetch)
 
-    def select(cls, env, config=None, db=None):
+    def select(cls, env, config=None):
         """Retrieve existing target platforms from the database that match the
         specified criteria.
         """
-        if not db:
-            db = env.get_db_cnx()
 
         where_clauses = []
         if config is not None:
@@ -354,11 +319,12 @@ class TargetPlatform(object):
         else:
             where = ""
 
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM bitten_platform %s ORDER BY name"
-                       % where, [wc[1] for wc in where_clauses])
-        for (id,) in cursor:
-            yield TargetPlatform.fetch(env, id)
+        with env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT id FROM bitten_platform %s ORDER BY name"
+                           % where, [wc[1] for wc in where_clauses])
+            for (id,) in cursor:
+                yield TargetPlatform.fetch(env, id)
 
     select = classmethod(select)
 
@@ -429,36 +395,26 @@ class Build(object):
     resource = property(fget=lambda self: Resource('build', '%s/%s' % (self.config, self.id)),
                         doc='Build resource identification')
 
-    def delete(self, db=None):
+    def delete(self):
         """Remove the build from the database."""
         assert self.exists, 'Cannot delete a non-existing build'
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
 
-        for step in list(BuildStep.select(self.env, build=self.id)):
-            step.delete(db=db)
+        with self.env.db_transaction as db:
+            for step in list(BuildStep.select(self.env, build=self.id)):
+                step.delete()
 
-        # Delete attachments
-        Attachment.delete_all(self.env, 'build', self.resource.id, db)
+            # Delete attachments
+            Attachment.delete_all(self.env, 'build', self.resource.id)
 
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM bitten_slave WHERE build=%s", (self.id,))
-        cursor.execute("DELETE FROM bitten_build WHERE id=%s", (self.id,))
+            cursor = db.cursor()
+            cursor.execute("DELETE FROM bitten_slave WHERE build=%s", (self.id,))
+            cursor.execute("DELETE FROM bitten_build WHERE id=%s", (self.id,))
 
-        if handle_ta:
-            db.commit()
+        #commit
 
-    def insert(self, db=None):
+    def insert(self):
         """Insert a new build into the database."""
         assert not self.exists, 'Cannot insert an existing build'
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
 
         assert self.config and self.rev and self.rev_time and self.platform
         assert self.status in (self.PENDING, self.IN_PROGRESS, self.SUCCESS,
@@ -466,64 +422,56 @@ class Build(object):
         if not self.slave:
             assert self.status == self.PENDING
 
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO bitten_build (config,rev,rev_time,platform,"
-                       "slave,started,stopped,last_activity,status) "
-                       "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                       (self.config, self.rev, int(self.rev_time),
-                        self.platform, self.slave or '', self.started or 0,
-                        self.stopped or 0, self.last_activity or 0,
-                        self.status))
-        self.id = db.get_last_id(cursor, 'bitten_build')
-        if self.slave_info:
-            cursor.executemany("INSERT INTO bitten_slave VALUES (%s,%s,%s)",
-                               [(self.id, name, value) for name, value
-                                in self.slave_info.items()])
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO bitten_build (config,rev,rev_time,platform,"
+                           "slave,started,stopped,last_activity,status) "
+                           "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                           (self.config, self.rev, int(self.rev_time),
+                            self.platform, self.slave or '', self.started or 0,
+                            self.stopped or 0, self.last_activity or 0,
+                            self.status))
+            self.id = db.get_last_id(cursor, 'bitten_build')
+            if self.slave_info:
+                cursor.executemany("INSERT INTO bitten_slave VALUES (%s,%s,%s)",
+                                   [(self.id, name, value) for name, value
+                                    in self.slave_info.items()])
 
-        if handle_ta:
-            db.commit()
+        #commit
 
-    def update(self, db=None):
+    def update(self):
         """Save changes to an existing build."""
         assert self.exists, 'Cannot update a non-existing build'
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
-
         assert self.config and self.rev
         assert self.status in (self.PENDING, self.IN_PROGRESS, self.SUCCESS,
                                self.FAILURE)
         if not self.slave:
             assert self.status == self.PENDING
 
-        cursor = db.cursor()
-        cursor.execute("UPDATE bitten_build SET slave=%s,started=%s,"
-                       "stopped=%s,last_activity=%s,status=%s WHERE id=%s",
-                       (self.slave or '', self.started or 0,
-                        self.stopped or 0, self.last_activity or 0,
-                        self.status, self.id))
-        cursor.execute("DELETE FROM bitten_slave WHERE build=%s", (self.id,))
-        if self.slave_info:
-            cursor.executemany("INSERT INTO bitten_slave VALUES (%s,%s,%s)",
-                               [(self.id, name, value) for name, value
-                                in self.slave_info.items()])
-        if handle_ta:
-            db.commit()
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            cursor.execute("UPDATE bitten_build SET slave=%s,started=%s,"
+                           "stopped=%s,last_activity=%s,status=%s WHERE id=%s",
+                           (self.slave or '', self.started or 0,
+                            self.stopped or 0, self.last_activity or 0,
+                            self.status, self.id))
+            cursor.execute("DELETE FROM bitten_slave WHERE build=%s", (self.id,))
+            if self.slave_info:
+                cursor.executemany("INSERT INTO bitten_slave VALUES (%s,%s,%s)",
+                                   [(self.id, name, value) for name, value
+                                    in self.slave_info.items()])
+        #commit
 
-    def fetch(cls, env, id, db=None):
+    def fetch(cls, env, id):
         """Retrieve an existing build from the database by ID."""
-        if not db:
-            db = env.get_db_cnx()
-
-        cursor = db.cursor()
-        cursor.execute("SELECT config,rev,rev_time,platform,slave,started,"
-                       "stopped,last_activity,status FROM bitten_build WHERE "
-                       "id=%s", (id,))
-        row = cursor.fetchone()
-        if not row:
-            return None
+        with env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT config,rev,rev_time,platform,slave,started,"
+                           "stopped,last_activity,status FROM bitten_build WHERE "
+                           "id=%s", (id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
 
         build = Build(env, config=row[0], rev=row[1], rev_time=int(row[2]),
                       platform=int(row[3]), slave=row[4],
@@ -541,12 +489,10 @@ class Build(object):
     fetch = classmethod(fetch)
 
     def select(cls, env, config=None, rev=None, platform=None, slave=None,
-               status=None, db=None, min_rev_time=None, max_rev_time=None):
+               status=None, min_rev_time=None, max_rev_time=None):
         """Retrieve existing builds from the database that match the specified
         criteria.
         """
-        if not db:
-            db = env.get_db_cnx()
 
         where_clauses = []
         if config is not None:
@@ -568,12 +514,14 @@ class Build(object):
         else:
             where = ""
 
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM bitten_build %s "
-                       "ORDER BY rev_time DESC,config,slave"
-                       % where, [wc[1] for wc in where_clauses])
-        for (id,) in cursor:
-            yield Build.fetch(env, id)
+        with self.env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT id FROM bitten_build %s "
+                           "ORDER BY rev_time DESC,config,slave"
+                           % where, [wc[1] for wc in where_clauses])
+            for (id,) in cursor:
+                yield Build.fetch(env, id)
+
     select = classmethod(select)
 
 
@@ -620,89 +568,75 @@ class BuildStep(object):
                           doc='Whether the build step was successful')
     completed = property(fget=lambda self: self.status == BuildStep.SUCCESS or self.status == BuildStep.FAILURE,
                           doc='Whether this build step has completed processing')
-    def delete(self, db=None):
+    def delete(self):
         """Remove the build step from the database."""
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
+        with self.env.db_transaction as db:
 
-        for log in list(BuildLog.select(self.env, build=self.build,
-                                        step=self.name, db=db)):
-            log.delete(db=db)
-        for report in list(Report.select(self.env, build=self.build,
-                                         step=self.name, db=db)):
-            report.delete(db=db)
+            for log in list(BuildLog.select(self.env, build=self.build,
+                                            step=self.name)):
+                log.delete()
+            for report in list(Report.select(self.env, build=self.build,
+                                             step=self.name)):
+                report.delete()
 
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM bitten_step WHERE build=%s AND name=%s",
-                       (self.build, self.name))
-        cursor.execute("DELETE FROM bitten_error WHERE build=%s AND step=%s",
-                       (self.build, self.name))
+            cursor = db.cursor()
+            cursor.execute("DELETE FROM bitten_step WHERE build=%s AND name=%s",
+                           (self.build, self.name))
+            cursor.execute("DELETE FROM bitten_error WHERE build=%s AND step=%s",
+                           (self.build, self.name))
 
-        if handle_ta:
-            db.commit()
+        #commit
         self._exists = False
 
-    def insert(self, db=None):
+    def insert(self):
         """Insert a new build step into the database."""
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
-
         assert self.build and self.name
         assert self.status in (self.SUCCESS, self.IN_PROGRESS, self.FAILURE)
 
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO bitten_step (build,name,description,status,"
-                       "started,stopped) VALUES (%s,%s,%s,%s,%s,%s)",
-                       (self.build, self.name, self.description or '',
-                        self.status, self.started or 0, self.stopped or 0))
-        if self.errors:
-            cursor.executemany("INSERT INTO bitten_error (build,step,message,"
-                               "orderno) VALUES (%s,%s,%s,%s)",
-                               [(self.build, self.name, message, idx)
-                                for idx, message in enumerate(self.errors)])
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO bitten_step (build,name,description,status,"
+                           "started,stopped) VALUES (%s,%s,%s,%s,%s,%s)",
+                           (self.build, self.name, self.description or '',
+                            self.status, self.started or 0, self.stopped or 0))
+            if self.errors:
+                cursor.executemany("INSERT INTO bitten_error (build,step,message,"
+                                   "orderno) VALUES (%s,%s,%s,%s)",
+                                   [(self.build, self.name, message, idx)
+                                    for idx, message in enumerate(self.errors)])
 
-        if handle_ta:
-            db.commit()
+        #commit
         self._exists = True
 
-    def fetch(cls, env, build, name, db=None):
+    def fetch(cls, env, build, name):
         """Retrieve an existing build from the database by build ID and step
         name."""
-        if not db:
-            db = env.get_db_cnx()
+        with env.db_query as db:
 
-        cursor = db.cursor()
-        cursor.execute("SELECT description,status,started,stopped "
-                       "FROM bitten_step WHERE build=%s AND name=%s",
-                       (build, name))
-        row = cursor.fetchone()
-        if not row:
-            return None
-        step = BuildStep(env, build, name, row[0] or '', row[1],
-                         row[2] and int(row[2]), row[3] and int(row[3]))
-        step._exists = True
+            cursor = db.cursor()
+            cursor.execute("SELECT description,status,started,stopped "
+                           "FROM bitten_step WHERE build=%s AND name=%s",
+                           (build, name))
+            row = cursor.fetchone()
+            if not row:
+                return None
 
-        cursor.execute("SELECT message FROM bitten_error WHERE build=%s "
-                       "AND step=%s ORDER BY orderno", (build, name))
-        for row in cursor:
-            step.errors.append(row[0] or '')
-        return step
+            step = BuildStep(env, build, name, row[0] or '', row[1],
+                             row[2] and int(row[2]), row[3] and int(row[3]))
+            step._exists = True
+
+            cursor.execute("SELECT message FROM bitten_error WHERE build=%s "
+                           "AND step=%s ORDER BY orderno", (build, name))
+            for row in cursor:
+                step.errors.append(row[0] or '')
+            return step
 
     fetch = classmethod(fetch)
 
-    def select(cls, env, build=None, name=None, status=None, db=None):
+    def select(cls, env, build=None, name=None, status=None):
         """Retrieve existing build steps from the database that match the
         specified criteria.
         """
-        if not db:
-            db = env.get_db_cnx()
-
         assert status in (None, BuildStep.SUCCESS, BuildStep.IN_PROGRESS, BuildStep.FAILURE)
 
         where_clauses = []
@@ -717,11 +651,12 @@ class BuildStep(object):
         else:
             where = ""
 
-        cursor = db.cursor()
-        cursor.execute("SELECT build,name FROM bitten_step %s ORDER BY started"
-                       % where, [wc[1] for wc in where_clauses])
-        for build, name in cursor:
-            yield BuildStep.fetch(env, build, name, db=db)
+        with env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT build,name FROM bitten_step %s ORDER BY started"
+                           % where, [wc[1] for wc in where_clauses])
+            for build, name in cursor:
+                yield BuildStep.fetch(env, build, name)
 
     select = classmethod(select)
 
@@ -776,14 +711,9 @@ class BuildLog(object):
             raise ValueError("Filename may not contain path: %s" % (filename,))
         return os.path.join(self.logs_dir, filename)
 
-    def delete(self, db=None):
+    def delete(self):
         """Remove the build log from the database."""
         assert self.exists, 'Cannot delete a non-existing build log'
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
 
         if self.filename:
             log_file = self.get_log_file(self.filename)
@@ -802,51 +732,46 @@ class BuildLog(object):
                     self.env.log.warning("Error removing level file %s: %s" \
                                                 % (level_file, e))
 
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM bitten_log WHERE id=%s", (self.id,))
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            cursor.execute("DELETE FROM bitten_log WHERE id=%s", (self.id,))
+        #commit
 
-        if handle_ta:
-            db.commit()
         self.id = None
 
-    def insert(self, db=None):
+    def insert(self):
         """Insert a new build log into the database."""
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
-
         assert self.build and self.step
 
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO bitten_log (build,step,generator,orderno) "
-                       "VALUES (%s,%s,%s,%s)", (self.build, self.step,
-                       self.generator, self.orderno))
-        id = db.get_last_id(cursor, 'bitten_log')
-        log_file = "%s.log" % (id,)
-        cursor.execute("UPDATE bitten_log SET filename=%s WHERE id=%s", (log_file, id))
-        if self.messages:
-            log_file_name = self.get_log_file(log_file)
-            level_file_name = log_file_name + self.LEVELS_SUFFIX
-            codecs.open(log_file_name, "wb", "UTF-8").writelines([to_unicode(msg[1]+"\n") for msg in self.messages])
-            codecs.open(level_file_name, "wb", "UTF-8").writelines([to_unicode(msg[0]+"\n") for msg in self.messages])
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO bitten_log (build,step,generator,orderno) "
+                           "VALUES (%s,%s,%s,%s)", (self.build, self.step,
+                           self.generator, self.orderno))
+            id = db.get_last_id(cursor, 'bitten_log')
+            log_file = "%s.log" % (id,)
+            cursor.execute("UPDATE bitten_log SET filename=%s WHERE id=%s", (log_file, id))
 
-        if handle_ta:
-            db.commit()
+            if self.messages:
+                log_file_name = self.get_log_file(log_file)
+                level_file_name = log_file_name + self.LEVELS_SUFFIX
+                codecs.open(log_file_name, "wb", "UTF-8").writelines([to_unicode(msg[1]+"\n") for msg in self.messages])
+                codecs.open(level_file_name, "wb", "UTF-8").writelines([to_unicode(msg[0]+"\n") for msg in self.messages])
+
+        #commit
         self.id = id
 
-    def fetch(cls, env, id, db=None):
+    def fetch(cls, env, id):
         """Retrieve an existing build from the database by ID."""
-        if not db:
-            db = env.get_db_cnx()
+        with env.db_query as db:
 
-        cursor = db.cursor()
-        cursor.execute("SELECT build,step,generator,orderno,filename FROM bitten_log "
-                       "WHERE id=%s", (id,))
-        row = cursor.fetchone()
-        if not row:
-            return None
+            cursor = db.cursor()
+            cursor.execute("SELECT build,step,generator,orderno,filename FROM bitten_log "
+                           "WHERE id=%s", (id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+
         log = BuildLog(env, int(row[0]), row[1], row[2], row[3], row[4])
         log.id = id
         if log.filename:
@@ -868,12 +793,10 @@ class BuildLog(object):
 
     fetch = classmethod(fetch)
 
-    def select(cls, env, build=None, step=None, generator=None, db=None):
+    def select(cls, env, build=None, step=None, generator=None):
         """Retrieve existing build logs from the database that match the
         specified criteria.
         """
-        if not db:
-            db = env.get_db_cnx()
 
         where_clauses = []
         if build is not None:
@@ -887,11 +810,12 @@ class BuildLog(object):
         else:
             where = ""
 
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM bitten_log %s ORDER BY orderno"
-                       % where, [wc[1] for wc in where_clauses])
-        for (id, ) in cursor:
-            yield BuildLog.fetch(env, id, db=db)
+        with env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT id FROM bitten_log %s ORDER BY orderno"
+                           % where, [wc[1] for wc in where_clauses])
+            for (id, ) in cursor:
+                yield BuildLog.fetch(env, id)
 
     select = classmethod(select)
 
@@ -946,102 +870,88 @@ class Report(object):
 
     def _create_item_tables(self, db, name):
         cur = db.cursor()
-        db_connector, _ = DatabaseManager(env)._get_connector()
+        db_connector, _ = DatabaseManager(env).get_connector()
         for stmt in db_connector.to_sql(
                 Table('bitten_report_item_'+name, key=('report', 'item'))[
                     Column('report', type='int'), Column('item', type='int'),
                     Column('value') ] ): cur.execute(stmt)
     #end
 
-    def delete(self, db=None):
+    def delete(self):
         """Remove the report from the database."""
         assert self.exists, 'Cannot delete a non-existing report'
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
 
-        cursor = db.cursor()
-        for item in Report._item_tables(db):
-            cursor.execute("DELETE FROM bitten_report_item_"+item+" WHERE report=%s",
-                           (self.id,))
-            if self.flog: self.flog.write("delete from bitten_report_item_%s for %s\n" % (item, self.id))
-        #end
-        cursor.execute("DELETE FROM bitten_report WHERE id=%s", (self.id,))
-        if handle_ta:
-            db.commit()
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            for item in Report._item_tables(db):
+                cursor.execute("DELETE FROM bitten_report_item_"+item+" WHERE report=%s",
+                               (self.id,))
+                if self.flog: self.flog.write("delete from bitten_report_item_%s for %s\n" % (item, self.id))
+            #end
+            cursor.execute("DELETE FROM bitten_report WHERE id=%s", (self.id,))
+        #commit
         self.id = None
 
-    def insert(self, db=None):
+    def insert(self):
         """Insert a new build log into the database."""
-        if not db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
-        else:
-            handle_ta = False
-
         assert self.build and self.step and self.category
 
         # Enforce uniqueness of build-step-category.
         # This should be done by the database, but the DB schema helpers in Trac
         # currently don't support UNIQUE() constraints
-        assert not list(Report.select(self.env, build=self.build,
-                                      step=self.step, category=self.category,
-                                      db=db)), 'Report already exists'
+        with self.env.db_transaction as db:
+            assert not list(Report.select(self.env, build=self.build,
+                                          step=self.step, category=self.category,
+                                          )), 'Report already exists'
 
-        tables = Report._item_tables(db)
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO bitten_report "
-                       "(build,step,category,generator) VALUES (%s,%s,%s,%s)",
-                       (self.build, self.step, self.category, self.generator))
-        rid = db.get_last_id(cursor, 'bitten_report')
-        for idx, item in enumerate([item for item in self.items if item]):
-            for key in item.keys():
-                if not key in tables:
-                    self._create_item_tables(db, key)
-                    tables.add(key)
+            tables = Report._item_tables(db)
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO bitten_report "
+                           "(build,step,category,generator) VALUES (%s,%s,%s,%s)",
+                           (self.build, self.step, self.category, self.generator))
+            rid = db.get_last_id(cursor, 'bitten_report')
+            for idx, item in enumerate([item for item in self.items if item]):
+                for key in item.keys():
+                    if not key in tables:
+                        self._create_item_tables(db, key)
+                        tables.add(key)
+                    #end
+                    if self.flog: self.flog.write("insert into bitten_report_item_%s: %s %s %d\n" % (key, rid, idx, len(item[key])));
+                    cursor.execute("REPLACE INTO bitten_report_item_"+key+" "
+                                   "(report,item,value) VALUES (%s,%s,%s)",
+                                   (rid, idx, item[key]))
                 #end
-                if self.flog: self.flog.write("insert into bitten_report_item_%s: %s %s %d\n" % (key, rid, idx, len(item[key])));
-                cursor.execute("REPLACE INTO bitten_report_item_"+key+" "
-                               "(report,item,value) VALUES (%s,%s,%s)",
-                               (rid, idx, item[key]))
             #end
-        #end
-        if handle_ta:
-            db.commit()
+        #commit
         self.id = rid
 
-    def fetch(cls, env, id, db=None):
+    def fetch(cls, env, id):
         """Retrieve an existing build from the database by ID."""
-        if not db:
-            db = env.get_db_cnx()
+        with env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT build,step,category,generator "
+                           "FROM bitten_report WHERE id=%s", (id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            report = Report(env, int(row[0]), row[1], row[2] or '', row[3] or '')
+            report.id = id
 
-        cursor = db.cursor()
-        cursor.execute("SELECT build,step,category,generator "
-                       "FROM bitten_report WHERE id=%s", (id,))
-        row = cursor.fetchone()
-        if not row:
-            return None
-        report = Report(env, int(row[0]), row[1], row[2] or '', row[3] or '')
-        report.id = id
+            items = {}
+            tables = Report._item_tables(db)
+            for name in tables:
+                cursor.execute("SELECT item,value FROM bitten_report_item_"+name+" "
+                               "WHERE report=%s ORDER BY item", (id,))
+                for item, value in cursor:
+                    items.setdefault(item, {})[name] = value
+            #end
+            report.items = items.values()
 
-        items = {}
-        tables = Report._item_tables(db)
-        for name in tables:
-            cursor.execute("SELECT item,value FROM bitten_report_item_"+name+" "
-                           "WHERE report=%s ORDER BY item", (id,))
-            for item, value in cursor:
-                items.setdefault(item, {})[name] = value
-        #end
-        report.items = items.values()
-
-        return report
+            return report
 
     fetch = classmethod(fetch)
 
-    def select(cls, env, config=None, build=None, step=None, category=None,
-               db=None):
+    def select(cls, env, config=None, build=None, step=None, category=None):
         """Retrieve existing reports from the database that match the specified
         criteria.
         """
@@ -1062,14 +972,13 @@ class Report(object):
         else:
             where = ""
 
-        if not db:
-            db = env.get_db_cnx()
-        cursor = db.cursor()
-        cursor.execute("SELECT bitten_report.id FROM bitten_report %s %s "
-                       "ORDER BY category" % (' '.join(joins), where),
-                       [wc[1] for wc in where_clauses])
-        for (id, ) in cursor:
-            yield Report.fetch(env, id, db=db)
+        with env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT bitten_report.id FROM bitten_report %s %s "
+                           "ORDER BY category" % (' '.join(joins), where),
+                           [wc[1] for wc in where_clauses])
+            for (id, ) in cursor:
+                yield Report.fetch(env, id, db=db)
 
     select = classmethod(select)
 
