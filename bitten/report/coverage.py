@@ -39,10 +39,10 @@ class TestCoverageChartGenerator(Component):
 SELECT build.rev, SUM(%s) AS loc, SUM(%s * %s / 100) AS cov
 FROM bitten_build AS build
  LEFT OUTER JOIN bitten_report AS report ON (report.build=build.id)
- LEFT OUTER JOIN bitten_report_item AS item_lines
-  ON (item_lines.report=report.id AND item_lines.name='lines')
- LEFT OUTER JOIN bitten_report_item AS item_percentage
-  ON (item_percentage.report=report.id AND item_percentage.name='percentage' AND
+ LEFT OUTER JOIN bitten_report_item_lines AS item_lines
+  ON (item_lines.report=report.id)
+ LEFT OUTER JOIN bitten_report_item_percentage AS item_percentage
+  ON (item_percentage.report=report.id AND
       item_percentage.item=item_lines.item)
 WHERE build.config=%%s AND report.category='coverage'
   AND build.rev_time >= %%s AND build.rev_time <= %%s
@@ -96,18 +96,15 @@ class TestCoverageSummarizer(Component):
 SELECT item_name.value AS unit, item_file.value AS file,
        max(item_lines.value) AS loc, max(item_percentage.value) AS cov
 FROM bitten_report AS report
- LEFT OUTER JOIN bitten_report_item AS item_name
-  ON (item_name.report=report.id AND item_name.name='name')
- LEFT OUTER JOIN bitten_report_item AS item_file
-  ON (item_file.report=report.id AND item_file.item=item_name.item AND
-      item_file.name='file')
- LEFT OUTER JOIN bitten_report_item AS item_lines
-  ON (item_lines.report=report.id AND item_lines.item=item_name.item AND
-      item_lines.name='lines')
- LEFT OUTER JOIN bitten_report_item AS item_percentage
+ LEFT OUTER JOIN bitten_report_item_name AS item_name
+  ON (item_name.report=report.id)
+ LEFT OUTER JOIN bitten_report_item_file AS item_file
+  ON (item_file.report=report.id AND item_file.item=item_name.item)
+ LEFT OUTER JOIN bitten_report_item_lines AS item_lines
+  ON (item_lines.report=report.id AND item_lines.item=item_name.item)
+ LEFT OUTER JOIN bitten_report_item_percentage AS item_percentage
   ON (item_percentage.report=report.id AND
-      item_percentage.item=item_name.item AND
-      item_percentage.name='percentage')
+      item_percentage.item=item_name.item)
 WHERE category='coverage' AND build=%s AND step=%s
 GROUP BY file, item_name.value
 ORDER BY item_name.value""", (build.id, step.name))
@@ -198,13 +195,11 @@ class TestCoverageAnnotator(Component):
                 FROM bitten_config AS c
                     INNER JOIN bitten_build AS b ON c.name=b.config
                     INNER JOIN bitten_report AS r ON b.id=r.build
-                    INNER JOIN bitten_report_item AS i1 ON r.id=i1.report
-                    INNER JOIN bitten_report_item AS i2 ON (i1.item=i2.item
+                    INNER JOIN bitten_report_item_file AS i1 ON r.id=i1.report
+                    INNER JOIN bitten_report_item_line_hits AS i2 ON (i1.item=i2.item
                                                     AND i1.report=i2.report)
-                WHERE i2.name='line_hits'
-                    AND b.rev_time>=%s
+                WHERE   b.rev_time>=%s
                     AND b.rev_time<=%s
-                    AND i1.name='file'
                     AND """ + db.concat('c.path', "'/'", 'i1.value') + """=%s
                 ORDER BY b.rev_time DESC LIMIT 1""" ,
             (created_time, version_time, full_path))

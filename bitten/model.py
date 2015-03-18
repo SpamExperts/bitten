@@ -11,7 +11,7 @@
 """Model classes for objects persisted in the database."""
 
 from trac.attachment import Attachment
-from trac.db import Table, Column, Index
+from trac.db import Table, Column, Index, DatabaseManager
 from trac.resource import Resource
 from trac.util.text import to_unicode
 from trac.util.datefmt import to_timestamp, utcmin, utcmax
@@ -898,17 +898,17 @@ class BuildLog(object):
 
 class Report(object):
     """Represents a generated report."""
-
+    tables = set([])
     _schema = [
         Table('bitten_report', key='id')[
             Column('id', auto_increment=True), Column('build', type='int'),
             Column('step'), Column('category'), Column('generator'),
             Index(['build', 'step', 'category'])
         ],
-        Table('bitten_report_item', key=('report', 'item', 'name'))[
-            Column('report', type='int'), Column('item', type='int'),
-            Column('name'), Column('value')
-        ]
+        #Table('bitten_report_item', key=('report', 'item', 'name'))[
+        #    Column('report', type='int'), Column('item', type='int'),
+        #    Column('name'), Column('value')
+        #]
     ]
 
     def __init__(self, env, build=None, step=None, category=None,
@@ -925,9 +925,33 @@ class Report(object):
         self.category = category
         self.generator = generator or ''
         self.items = []
+        self.tables = set([])
+        self.flog = None #open("/tmp/bitten_report.insert","w")
+        #self.flog.write("init report for step %s" % step)
+    #end
 
     exists = property(fget=lambda self: self.id is not None,
                       doc='Whether this report exists in the database')
+
+    @classmethod
+    def _item_tables(self, db):
+        if self.tables and len(self.tables) > 0:
+            return self.tables
+        #end
+        cur = db.cursor()
+        cur.execute("show tables like 'bitten_report_item_%'")
+        self.tables = set([ x[0][19:] for x in cur ])
+        return self.tables
+    #end
+
+    def _create_item_tables(self, db, name):
+        cur = db.cursor()
+        db_connector, _ = DatabaseManager(env)._get_connector()
+        for stmt in db_connector.to_sql(
+                Table('bitten_report_item_'+name, key=('report', 'item'))[
+                    Column('report', type='int'), Column('item', type='int'),
+                    Column('value') ] ): cur.execute(stmt)
+    #end
 
     def delete(self, db=None):
         """Remove the report from the database."""
@@ -939,10 +963,12 @@ class Report(object):
             handle_ta = False
 
         cursor = db.cursor()
-        cursor.execute("DELETE FROM bitten_report_item WHERE report=%s",
-                       (self.id,))
+        for item in Report._item_tables(db):
+            cursor.execute("DELETE FROM bitten_report_item_"+item+" WHERE report=%s",
+                           (self.id,))
+            if self.flog: self.flog.write("delete from bitten_report_item_%s for %s\n" % (item, self.id))
+        #end
         cursor.execute("DELETE FROM bitten_report WHERE id=%s", (self.id,))
-
         if handle_ta:
             db.commit()
         self.id = None
@@ -964,20 +990,27 @@ class Report(object):
                                       step=self.step, category=self.category,
                                       db=db)), 'Report already exists'
 
+        tables = Report._item_tables(db)
         cursor = db.cursor()
         cursor.execute("INSERT INTO bitten_report "
                        "(build,step,category,generator) VALUES (%s,%s,%s,%s)",
                        (self.build, self.step, self.category, self.generator))
-        id = db.get_last_id(cursor, 'bitten_report')
+        rid = db.get_last_id(cursor, 'bitten_report')
         for idx, item in enumerate([item for item in self.items if item]):
-            cursor.executemany("INSERT INTO bitten_report_item "
-                               "(report,item,name,value) VALUES (%s,%s,%s,%s)",
-                               [(id, idx, key, value) for key, value
-                                in item.items()])
-
+            for key in item.keys():
+                if not key in tables:
+                    self._create_item_tables(db, key)
+                    tables.add(key)
+                #end
+                if self.flog: self.flog.write("insert into bitten_report_item_%s: %s %s %d\n" % (key, rid, idx, len(item[key])));
+                cursor.execute("REPLACE INTO bitten_report_item_"+key+" "
+                               "(report,item,value) VALUES (%s,%s,%s)",
+                               (rid, idx, item[key]))
+            #end
+        #end
         if handle_ta:
             db.commit()
-        self.id = id
+        self.id = rid
 
     def fetch(cls, env, id, db=None):
         """Retrieve an existing build from the database by ID."""
@@ -993,11 +1026,14 @@ class Report(object):
         report = Report(env, int(row[0]), row[1], row[2] or '', row[3] or '')
         report.id = id
 
-        cursor.execute("SELECT item,name,value FROM bitten_report_item "
-                       "WHERE report=%s ORDER BY item", (id,))
         items = {}
-        for item, name, value in cursor:
-            items.setdefault(item, {})[name] = value
+        tables = Report._item_tables(db)
+        for name in tables:
+            cursor.execute("SELECT item,value FROM bitten_report_item_"+name+" "
+                           "WHERE report=%s ORDER BY item", (id,))
+            for item, value in cursor:
+                items.setdefault(item, {})[name] = value
+        #end
         report.items = items.values()
 
         return report

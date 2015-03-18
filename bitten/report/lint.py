@@ -35,14 +35,14 @@ class PyLintChartGenerator(Component):
         #self.log.debug('config.name=\'%s\'' % (config.name,))
         query = """
 select build.rev, 
- (select count(*) from bitten_report_item as item
-  where item.report = report.id and item.name='category' and item.value='convention'),
- (select count(*) from bitten_report_item as item
-  where item.report = report.id and item.name='category' and item.value='error'),
- (select count(*) from bitten_report_item as item
-  where item.report = report.id and item.name='category' and item.value='refactor'),
- (select count(*) from bitten_report_item as item
-  where item.report = report.id and item.name='category' and item.value='warning')
+ (select count(*) from bitten_report_item_category as item
+  where item.report = report.id and item.value='convention'),
+ (select count(*) from bitten_report_item_category as item
+  where item.report = report.id and item.value='error'),
+ (select count(*) from bitten_report_item_category as item
+  where item.report = report.id and item.value='refactor'),
+ (select count(*) from bitten_report_item_category as item
+  where item.report = report.id and item.value='warning')
 from bitten_report as report
  left outer join bitten_build as build ON (report.build=build.id)
 where build.config='%s' and report.category='lint'
@@ -111,24 +111,20 @@ SELECT item_type.value AS type, item_file.value AS file,
     item_msg.value as msg,
     report.category as report_category
 FROM bitten_report AS report
- LEFT OUTER JOIN bitten_report_item AS item_type
-  ON (item_type.report=report.id AND item_type.name='type')
- LEFT OUTER JOIN bitten_report_item AS item_file
+ LEFT OUTER JOIN bitten_report_item_type AS item_type
+  ON (item_type.report=report.id)
+ LEFT OUTER JOIN bitten_report_item_file AS item_file
   ON (item_file.report=report.id AND
-    item_file.item=item_type.item AND
-    item_file.name='file')
- LEFT OUTER JOIN bitten_report_item AS item_line
+    item_file.item=item_type.item)
+ LEFT OUTER JOIN bitten_report_item_line AS item_line
   ON (item_line.report=report.id AND
-    item_line.item=item_type.item AND
-    item_line.name='line')
- LEFT OUTER JOIN bitten_report_item AS item_category
+    item_line.item=item_type.item)
+ LEFT OUTER JOIN bitten_report_item_category AS item_category
   ON (item_category.report=report.id AND
-    item_category.item=item_type.item AND
-    item_category.name='category')
- LEFT OUTER JOIN bitten_report_item AS item_msg
+    item_category.item=item_type.item)
+ LEFT OUTER JOIN bitten_report_item_msg AS item_msg
   ON (item_msg.report=report.id AND
-    item_msg.item=item_type.item AND
-    item_msg.name='msg')
+    item_msg.item=item_type.item)
 WHERE report.category='lint' AND build=%s AND step=%s
 ORDER BY item_file.value, item_type.value""", (build.id, step.name))
 

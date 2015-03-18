@@ -32,8 +32,8 @@ class TestResultsChartGenerator(Component):
 SELECT build.rev, build.platform, item_status.value AS status, COUNT(*) AS num
 FROM bitten_build AS build
  LEFT OUTER JOIN bitten_report AS report ON (report.build=build.id)
- LEFT OUTER JOIN bitten_report_item AS item_status
-  ON (item_status.report=report.id AND item_status.name='status')
+ LEFT OUTER JOIN bitten_report_item_status AS item_status
+  ON (item_status.report=report.id)
 WHERE build.config=%s AND report.category='test'
   AND build.rev_time >= %s AND build.rev_time <= %s
 GROUP BY build.rev_time, build.rev, build.platform, item_status.value
@@ -98,23 +98,22 @@ SELECT item_fixture.value AS fixture, item_file.value AS file,
        COUNT(item_failure.value) AS num_failure,
        COUNT(item_error.value) AS num_error
 FROM bitten_report AS report
- LEFT OUTER JOIN bitten_report_item AS item_fixture
-  ON (item_fixture.report=report.id AND item_fixture.name='fixture')
- LEFT OUTER JOIN bitten_report_item AS item_file
-  ON (item_file.report=report.id AND item_file.item=item_fixture.item AND
-      item_file.name='file')
- LEFT OUTER JOIN bitten_report_item AS item_success
+ LEFT OUTER JOIN bitten_report_item_fixture AS item_fixture
+  ON (item_fixture.report=report.id)
+ LEFT OUTER JOIN bitten_report_item_file AS item_file
+  ON (item_file.report=report.id AND item_file.item=item_fixture.item)
+ LEFT OUTER JOIN bitten_report_item_status AS item_success
   ON (item_success.report=report.id AND item_success.item=item_fixture.item AND
-      item_success.name='status' AND item_success.value='success')
- LEFT OUTER JOIN bitten_report_item AS item_ignore
+      item_success.value='success')
+ LEFT OUTER JOIN bitten_report_item_status AS item_ignore
   ON (item_ignore.report=report.id AND item_ignore.item=item_fixture.item AND
-      item_ignore.name='status' AND item_ignore.value='ignore')
- LEFT OUTER JOIN bitten_report_item AS item_failure
+      item_ignore.value='ignore')
+ LEFT OUTER JOIN bitten_report_item_status AS item_failure
   ON (item_failure.report=report.id AND item_failure.item=item_fixture.item AND
-      item_failure.name='status' AND item_failure.value='failure')
- LEFT OUTER JOIN bitten_report_item AS item_error
+      item_failure.value='failure')
+ LEFT OUTER JOIN bitten_report_item_status AS item_error
   ON (item_error.report=report.id AND item_error.item=item_fixture.item AND
-      item_error.name='status' AND item_error.value='error')
+      item_error.value='error')
 WHERE category='test' AND build=%s AND step=%s
 GROUP BY file, fixture
 ORDER BY fixture""", (build.id, step.name))
@@ -140,21 +139,17 @@ ORDER BY fixture""", (build.id, step.name))
 SELECT item_status.value AS status, item_name.value AS name,
        item_traceback.value AS traceback
 FROM bitten_report
- LEFT OUTER JOIN bitten_report_item AS item_fixture
-  ON (item_fixture.report=bitten_report.id AND
-      item_fixture.name='fixture')
- LEFT OUTER JOIN bitten_report_item AS item_status
+ LEFT OUTER JOIN bitten_report_item_fixture AS item_fixture
+  ON (item_fixture.report=bitten_report.id)
+ LEFT OUTER JOIN bitten_report_item_status AS item_status
   ON (item_status.report=bitten_report.id AND
-      item_status.item=item_fixture.item AND
-      item_status.name='status')
- LEFT OUTER JOIN bitten_report_item AS item_name
+      item_status.item=item_fixture.item)
+ LEFT OUTER JOIN bitten_report_item_name AS item_name
   ON (item_name.report=bitten_report.id AND
-      item_name.item=item_fixture.item AND
-      item_name.name='name')
- LEFT OUTER JOIN bitten_report_item AS item_traceback
+      item_name.item=item_fixture.item)
+ LEFT OUTER JOIN bitten_report_item_traceback AS item_traceback
   ON (item_traceback.report=bitten_report.id AND
-      item_traceback.item=item_fixture.item AND
-      item_traceback.name='traceback')
+      item_traceback.item=item_fixture.item)
 WHERE category='test' AND build=%s AND step=%s AND item_status.value<>'success' AND
       item_fixture.value=%s""", (build.id, step.name, fixture['name']))
 
