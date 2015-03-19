@@ -35,18 +35,18 @@ class BuildSetup(Component):
 
     def environment_created(self):
         # Create the required tables
-        db = self.env.get_db_cnx()
-        connector, _ = DatabaseManager(self.env)._get_connector()
-        cursor = db.cursor()
-        for table in schema:
-            for stmt in connector.to_sql(table):
-                cursor.execute(stmt)
+        with self.env.transaction as db:
+            connector, _ = DatabaseManager(self.env).get_connector()
+            cursor = db.cursor()
+            for table in schema:
+                for stmt in connector.to_sql(table):
+                    cursor.execute(stmt)
 
-        # Insert a global version flag
-        cursor.execute("INSERT INTO system (name,value) "
-                       "VALUES ('bitten_version',%s)", (schema_version,))
+            # Insert a global version flag
+            cursor.execute("INSERT INTO system (name,value) "
+                           "VALUES ('bitten_version',%s)", (schema_version,))
 
-        db.commit()
+        #commit
 
     def environment_needs_upgrade(self, db):
         cursor = db.cursor()

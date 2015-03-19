@@ -34,7 +34,7 @@ from bitten.util.repository import get_repos
 __docformat__ = 'restructuredtext en'
 
 
-def collect_changes(config, authname=None, db=None):
+def collect_changes(config, authname=None):
     """Collect all changes for a build configuration that either have already
     been built, or still need to be built.
     
@@ -50,42 +50,40 @@ def collect_changes(config, authname=None, db=None):
 
     repos_name, repos, repos_path = get_repos(env, config.path, authname)
 
-    if not db:
-        db = env.get_db_cnx()
-    try:
-        node = repos.get_node(repos_path)
-    except Exception, e:
-        env.log.warn('Error accessing path %r for configuration %r',
-                    repos_path, config.name, exc_info=True)
-        return
+    with env.db_query as db:
+        try:
+            node = repos.get_node(repos_path)
+        except Exception, e:
+            env.log.warn('Error accessing path %r for configuration %r',
+                        repos_path, config.name, exc_info=True)
+            return
 
-    for path, rev, chg in node.get_history():
+        for path, rev, chg in node.get_history():
 
-        # Don't follow moves/copies
-        if path != repos.normalize_path(repos_path):
-            break
+            # Don't follow moves/copies
+            if path != repos.normalize_path(repos_path):
+                break
 
-        # Stay within the limits of the build config
-        if config.min_rev and repos.rev_older_than(rev, config.min_rev):
-            break
-        if config.max_rev and repos.rev_older_than(config.max_rev, rev):
-            continue
+            # Stay within the limits of the build config
+            if config.min_rev and repos.rev_older_than(rev, config.min_rev):
+                break
+            if config.max_rev and repos.rev_older_than(config.max_rev, rev):
+                continue
 
-        # Make sure the repository directory isn't empty at this
-        # revision
-        old_node = repos.get_node(path, rev)
-        is_empty = True
-        for entry in old_node.get_entries():
-            is_empty = False
-            break
-        if is_empty:
-            continue
+            # Make sure the repository directory isn't empty at this
+            # revision
+            old_node = repos.get_node(path, rev)
+            is_empty = True
+            for entry in old_node.get_entries():
+                is_empty = False
+                break
+            if is_empty:
+                continue
 
         # For every target platform, check whether there's a build
         # of this revision
-        for platform in TargetPlatform.select(env, config.name, db=db):
-            builds = list(Build.select(env, config.name, rev, platform.id,
-                                       db=db))
+        for platform in TargetPlatform.select(env, config.name):
+            builds = list(Build.select(env, config.name, rev, platform.id))
             if builds:
                 build = builds[0]
             else:
@@ -133,8 +131,6 @@ class BuildQueue(object):
         """
         self.log.debug('Checking for pending builds...')
 
-        db = self.env.get_db_cnx()
-
         self.reset_orphaned_builds()
 
         # Iterate through pending builds by descending revision timestamp, to
@@ -142,7 +138,7 @@ class BuildQueue(object):
         platforms = [p.id for p in self.match_slave(name, properties)]
         builds_to_delete = []
         build_found = False
-        for build in Build.select(self.env, status=Build.PENDING, db=db):
+        for build in Build.select(self.env, status=Build.PENDING):
             config_path = BuildConfig.fetch(self.env, name=build.config).path
             _name, repos, _path = get_repos(self.env, config_path, None)
             if self.should_delete_build(build, repos):
@@ -157,16 +153,13 @@ class BuildQueue(object):
 
         # delete any obsolete builds
         for build_to_delete in builds_to_delete:
-            build_to_delete.delete(db=db)
+            build_to_delete.delete()
 
         if build:
             build.slave = name
             build.slave_info.update(properties)
             build.status = Build.IN_PROGRESS
-            build.update(db=db)
-
-        if build or builds_to_delete:
-            db.commit()
+            build.update()
 
         return build
 
@@ -217,12 +210,11 @@ class BuildQueue(object):
         method will eventually result in the entire change history of the build
         configuration being in the build queue.
         """
-        db = self.env.get_db_cnx()
         builds = []
 
-        for config in BuildConfig.select(self.env, db=db):
+        for config in BuildConfig.select(self.env):
             platforms = []
-            for platform, rev, build in collect_changes(config, db=db):
+            for platform, rev, build in collect_changes(config):
 
                 if not self.build_all and platform.id in platforms:
                     # We've seen this platform already, so these are older
@@ -256,8 +248,7 @@ class BuildQueue(object):
 
         for build in builds:
             try:
-                build.insert(db=db)
-                db.commit()
+                build.insert()
             except Exception, e:
                 # really only want to catch IntegrityErrors raised when
                 # a second slave attempts to add builds with the same
@@ -265,7 +256,7 @@ class BuildQueue(object):
                 self.log.info('Failed to insert build of configuration "%s" '
                     'at revision [%s] on platform [%s]: %s',
                     build.config, build.rev, build.platform, e)
-                db.rollback()
+                raise
 
     def reset_orphaned_builds(self):
         """Reset all in-progress builds to ``PENDING`` state if they've been
@@ -280,30 +271,30 @@ class BuildQueue(object):
             # considered orphaned
             return
 
-        db = self.env.get_db_cnx()
-        now = int(time.time())
-        for build in Build.select(self.env, status=Build.IN_PROGRESS, db=db):
-            if now - build.last_activity < self.timeout:
-                # This build has not reached the timeout yet, assume it's still
-                # being executed
-                continue
+        with self.env.db_transaction as db:
+            now = int(time.time())
+            for build in Build.select(self.env, status=Build.IN_PROGRESS):
+                if now - build.last_activity < self.timeout:
+                    # This build has not reached the timeout yet, assume it's still
+                    # being executed
+                    continue
 
-            self.log.info('Orphaning build %d. Last activity was %s (%s)' % \
-                              (build.id, format_datetime(build.last_activity),
-                               pretty_timedelta(build.last_activity)))
+                self.log.info('Orphaning build %d. Last activity was %s (%s)' % \
+                                  (build.id, format_datetime(build.last_activity),
+                                   pretty_timedelta(build.last_activity)))
 
-            build.status = Build.PENDING
-            build.slave = None
-            build.slave_info = {}
-            build.started = 0
-            build.stopped = 0
-            build.last_activity = 0
-            for step in list(BuildStep.select(self.env, build=build.id, db=db)):
-                step.delete(db=db)
-            build.update(db=db)
+                build.status = Build.PENDING
+                build.slave = None
+                build.slave_info = {}
+                build.started = 0
+                build.stopped = 0
+                build.last_activity = 0
+                for step in list(BuildStep.select(self.env, build=build.id)):
+                    step.delete()
+                build.update()
 
-            Attachment.delete_all(self.env, 'build', build.resource.id, db)
-        db.commit()
+                Attachment.delete_all(self.env, 'build', build.resource.id)
+        #commit
 
     def should_delete_build(self, build, repos):
         config = BuildConfig.fetch(self.env, build.config)

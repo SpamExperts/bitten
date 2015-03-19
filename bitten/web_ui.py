@@ -312,8 +312,6 @@ class BuildConfigController(Component):
         data = {'title': 'In Progress Builds',
                 'page_mode': 'view-inprogress'}
 
-        db = self.env.get_db_cnx()
-
         configs = []
         for config in BuildConfig.select(self.env, include_inactive=False):
             repos_name, repos, repos_path = get_repos(self.env, config.path,
@@ -333,7 +331,7 @@ class BuildConfigController(Component):
                 continue
 
             in_progress_builds = Build.select(self.env, config=config.name,
-                                              status=Build.IN_PROGRESS, db=db)
+                                              status=Build.IN_PROGRESS)
 
             current_builds = 0
             builds = []
@@ -348,7 +346,7 @@ class BuildConfigController(Component):
                 build_data['platform'] = platform.name
                 build_data['steps'] = []
 
-                for step in BuildStep.select(self.env, build=build.id, db=db):
+                for step in BuildStep.select(self.env, build=build.id):
                     build_data['steps'].append({
                         'name': step.name,
                         'description': step.description,
@@ -381,9 +379,8 @@ class BuildConfigController(Component):
         return data
 
     def _render_config(self, req, config_name):
-        db = self.env.get_db_cnx()
 
-        config = BuildConfig.fetch(self.env, config_name, db=db)
+        config = BuildConfig.fetch(self.env, config_name)
         if not config:
             raise HTTPNotFound("Build configuration '%s' does not exist." \
                                 % config_name)
@@ -441,8 +438,7 @@ class BuildConfigController(Component):
         data['context'] = context
         data['config']['attachments'] = AttachmentModule(self.env).attachment_data(context)
 
-        platforms = list(TargetPlatform.select(self.env, config=config_name,
-                                               db=db))
+        platforms = list(TargetPlatform.select(self.env, config=config_name))
         data['config']['platforms'] = [
             { 'name': platform.name,
               'id': platform.id,
@@ -459,7 +455,7 @@ class BuildConfigController(Component):
         ]
 
         has_reports = False
-        for report in Report.select(self.env, config=config.name, db=db):
+        for report in Report.select(self.env, config=config.name):
             has_reports = True
             break
 
@@ -501,8 +497,7 @@ class BuildConfigController(Component):
                 if build and build.status != Build.PENDING:
                     build_data = _get_build_data(self.env, req, build)
                     build_data['steps'] = []
-                    for step in BuildStep.select(self.env, build=build.id,
-                                                 db=db):
+                    for step in BuildStep.select(self.env, build=build.id):
                         build_data['steps'].append({
                             'name': step.name,
                             'description': step.description,
@@ -542,18 +537,14 @@ class BuildConfigController(Component):
         of this configuration.
         """
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
 
-        cursor.execute("""SELECT DISTINCT report.category as category
+        for (category, ) in self.env.db_query("""SELECT DISTINCT report.category as category
 FROM bitten_build AS build
 JOIN bitten_report AS report ON (report.build=build.id)
 WHERE build.config=%s AND build.rev_time >= %s AND build.rev_time <= %s""",
                        (config.name,
                         config.min_rev_time(self.env),
                         config.max_rev_time(self.env)))
-
-        for (category,) in cursor:
             yield category
 
 
@@ -586,16 +577,15 @@ class BuildController(Component):
     def process_request(self, req):
         req.perm.require('BUILD_VIEW')
 
-        db = self.env.get_db_cnx()
         build_id = int(req.args.get('id'))
-        build = Build.fetch(self.env, build_id, db=db)
+        build = Build.fetch(self.env, build_id)
         if not build:
             raise HTTPNotFound("Build '%s' does not exist." \
                                 % build_id)
 
         if req.method == 'POST':
             if req.args.get('action') == 'invalidate':
-                self._do_invalidate(req, build, db)
+                self._do_invalidate(req, build)
             req.redirect(req.href.build(build.config, build.id))
 
         add_link(req, 'up', req.href.build(build.config),
@@ -604,7 +594,7 @@ class BuildController(Component):
                                             _status_title[build.status]),
                 'page_mode': 'view_build',
                 'build': {}}
-        config = BuildConfig.fetch(self.env, build.config, db=db)
+        config = BuildConfig.fetch(self.env, build.config)
         data['build']['config'] = {
             'name': config.label or config.name,
             'href': req.href.build(config.name)
@@ -630,7 +620,7 @@ class BuildController(Component):
 
         data['build'].update(_get_build_data(self.env, req, build, repos_name))
         steps = []
-        for step in BuildStep.select(self.env, build=build.id, db=db):
+        for step in BuildStep.select(self.env, build=build.id):
             steps.append({
                 'name': step.name, 'description': step.description,
                 'duration': pretty_timedelta(step.started, step.stopped or int(time.time())),
@@ -675,36 +665,35 @@ class BuildController(Component):
 
         add_stylesheet(req, 'bitten/bitten.css')
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        cursor.execute("SELECT b.id,b.config,c.label,c.path, b.rev,p.name,"
-                       "b.stopped,b.status FROM bitten_build AS b"
-                       "  INNER JOIN bitten_config AS c ON (c.name=b.config) "
-                       "  INNER JOIN bitten_platform AS p ON (p.id=b.platform) "
-                       "WHERE b.stopped>=%s AND b.stopped<=%s "
-                       "AND b.status IN (%s, %s) ORDER BY b.stopped",
-                       (start, stop, Build.SUCCESS, Build.FAILURE))
+        with self.env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT b.id,b.config,c.label,c.path, b.rev,p.name,"
+                           "b.stopped,b.status FROM bitten_build AS b"
+                           "  INNER JOIN bitten_config AS c ON (c.name=b.config) "
+                           "  INNER JOIN bitten_platform AS p ON (p.id=b.platform) "
+                           "WHERE b.stopped>=%s AND b.stopped<=%s "
+                           "AND b.status IN (%s, %s) ORDER BY b.stopped",
+                           (start, stop, Build.SUCCESS, Build.FAILURE))
 
-        event_kinds = {Build.SUCCESS: 'successbuild',
-                       Build.FAILURE: 'failedbuild'}
+            event_kinds = {Build.SUCCESS: 'successbuild',
+                           Build.FAILURE: 'failedbuild'}
 
-        for id_, config, label, path, rev, platform, stopped, status in cursor:
-            config_object = BuildConfig.fetch(self.env, config, db=db)
-            repos_name, repos, repos_path = get_repos(self.env,
-                                                      config_object.path,
-                                                      req.authname)
-            if not _has_permission(req.perm, repos, repos_path, rev=rev):
-                continue
-            errors = []
-            if status == Build.FAILURE:
-                for step in BuildStep.select(self.env, build=id_,
-                                             status=BuildStep.FAILURE,
-                                             db=db):
-                    errors += [(step.name, error) for error
-                               in step.errors]
-            yield (event_kinds[status], to_datetime(stopped, utc), None,
-                        (id_, config, label, display_rev(repos, rev), platform,
-                            status, errors))
+            for id_, config, label, path, rev, platform, stopped, status in cursor:
+                config_object = BuildConfig.fetch(self.env, config)
+                repos_name, repos, repos_path = get_repos(self.env,
+                                                          config_object.path,
+                                                          req.authname)
+                if not _has_permission(req.perm, repos, repos_path, rev=rev):
+                    continue
+                errors = []
+                if status == Build.FAILURE:
+                    for step in BuildStep.select(self.env, build=id_,
+                                                 status=BuildStep.FAILURE):
+                        errors += [(step.name, error) for error
+                                   in step.errors]
+                yield (event_kinds[status], to_datetime(stopped, utc), None,
+                            (id_, config, label, display_rev(repos, rev), platform,
+                                status, errors))
 
     def render_timeline_event(self, context, field, event):
         id_, config, label, rev, platform, status, errors = event[3]
@@ -752,23 +741,24 @@ class BuildController(Component):
 
     # Internal methods
 
-    def _do_invalidate(self, req, build, db):
+    def _do_invalidate(self, req, build):
         self.log.info('Invalidating build %d', build.id)
 
-        for step in BuildStep.select(self.env, build=build.id, db=db):
-            step.delete(db=db)
+        with self.env.db_transaction as db:
+            for step in BuildStep.select(self.env, build=build.id):
+                step.delete()
 
-        build.slave = None
-        build.started = 0
-        build.stopped = 0
-        build.last_activity = 0
-        build.status = Build.PENDING
-        build.slave_info = {}
-        build.update()
+            build.slave = None
+            build.started = 0
+            build.stopped = 0
+            build.last_activity = 0
+            build.status = Build.PENDING
+            build.slave_info = {}
+            build.update()
 
-        Attachment.delete_all(self.env, 'build', build.resource.id, db)
+            Attachment.delete_all(self.env, 'build', build.resource.id)
 
-        db.commit()
+        #commit
 
         req.redirect(req.href.build(build.config))
 

@@ -229,11 +229,10 @@ class BuildConfigurationsAdminPageProvider(Component):
         active = req.args.get('active') or []
         active = isinstance(active, list) and active or [active]
 
-        db = self.env.get_db_cnx()
-        for config in list(BuildConfig.select(self.env, db=db,
+        for config in list(BuildConfig.select(self.env,
                                               include_inactive=True)):
             config.active = config.name in active
-            config.update(db=db)
+            config.update()
         db.commit()
 
     def _create_config(self, req):
@@ -257,13 +256,13 @@ class BuildConfigurationsAdminPageProvider(Component):
             raise TracError('No configuration selected')
         sel = isinstance(sel, list) and sel or [sel]
 
-        db = self.env.get_db_cnx()
-        for name in sel:
-            config = BuildConfig.fetch(self.env, name, db=db)
-            if not config:
-                raise TracError('Configuration %r not found' % name)
-            config.delete(db=db)
-        db.commit()
+        with self.env.db_transaction as db:
+            for name in sel:
+                config = BuildConfig.fetch(self.env, name)
+                if not config:
+                    raise TracError('Configuration %r not found' % name)
+                config.delete()
+        #commit
 
     def _update_config(self, req, config):
         warnings = []
@@ -338,13 +337,13 @@ class BuildConfigurationsAdminPageProvider(Component):
             raise TracError('No platform selected')
         sel = isinstance(sel, list) and sel or [sel]
 
-        db = self.env.get_db_cnx()
-        for platform_id in sel:
-            platform = TargetPlatform.fetch(self.env, platform_id, db=db)
-            if not platform:
-                raise TracError('Target platform %r not found' % platform_id)
-            platform.delete(db=db)
-        db.commit()
+        with self.env.db_transaction as db:
+            for platform_id in sel:
+                platform = TargetPlatform.fetch(self.env, platform_id)
+                if not platform:
+                    raise TracError('Target platform %r not found' % platform_id)
+                platform.delete()
+        #commit
 
     def _update_platform(self, req, platform):
         platform.name = req.args.get('name')

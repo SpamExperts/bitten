@@ -232,14 +232,14 @@ class BuildMaster(Component):
         build.slave = None
         build.slave_info = {}
         build.started = 0
-        db = self.env.get_db_cnx()
-        for step in list(BuildStep.select(self.env, build=build.id, db=db)):
-            step.delete(db=db)
-        build.update(db=db)
+        with self.env.db_transaction as db:
+            for step in list(BuildStep.select(self.env, build=build.id)):
+                step.delete()
+            build.update()
 
-        Attachment.delete_all(self.env, 'build', build.resource.id, db)
+            Attachment.delete_all(self.env, 'build', build.resource.id)
 
-        db.commit()
+        #commit
 
         for listener in BuildSystem(self.env).listeners:
             listener.build_aborted(build)
@@ -320,8 +320,6 @@ class BuildMaster(Component):
                        'status %s', build.slave, build.id, index, stepname,
                        elem.attr['status'])
 
-        db = self.env.get_db_cnx()
-
         step.stopped = int(time.time())
 
         if elem.attr['status'] == 'failure':
@@ -333,71 +331,72 @@ class BuildMaster(Component):
             step.status = BuildStep.SUCCESS
         step.errors += [error.gettext() for error in elem.children('error')]
 
-        # TODO: step.update(db=db)
-        step.delete(db=db)
-        step.insert(db=db)
+        with self.env.db_transaction as db:
+            # TODO: step.update()
+            step.delete()
+            step.insert()
 
-        # Collect log messages from the request body
-        for idx, log_elem in enumerate(elem.children('log')):
-            build_log = BuildLog(self.env, build=build.id, step=stepname,
-                                 generator=log_elem.attr.get('generator'),
-                                 orderno=idx)
-            for message_elem in log_elem.children('message'):
-                build_log.messages.append((message_elem.attr['level'],
-                                           message_elem.gettext()))
-            build_log.insert(db=db)
+            # Collect log messages from the request body
+            for idx, log_elem in enumerate(elem.children('log')):
+                build_log = BuildLog(self.env, build=build.id, step=stepname,
+                                     generator=log_elem.attr.get('generator'),
+                                     orderno=idx)
+                for message_elem in log_elem.children('message'):
+                    build_log.messages.append((message_elem.attr['level'],
+                                               message_elem.gettext()))
+                build_log.insert()
 
-        # Collect report data from the request body
-        for report_elem in elem.children('report'):
-            report = Report(self.env, build=build.id, step=stepname,
-                            category=report_elem.attr.get('category'),
-                            generator=report_elem.attr.get('generator'))
-            for item_elem in report_elem.children():
-                item = {'type': item_elem.name}
-                item.update(item_elem.attr)
-                for child_elem in item_elem.children():
-                    item[child_elem.name] = child_elem.gettext()
-                report.items.append(item)
-            report.insert(db=db)
+            # Collect report data from the request body
+            for report_elem in elem.children('report'):
+                report = Report(self.env, build=build.id, step=stepname,
+                                category=report_elem.attr.get('category'),
+                                generator=report_elem.attr.get('generator'))
+                for item_elem in report_elem.children():
+                    item = {'type': item_elem.name}
+                    item.update(item_elem.attr)
+                    for child_elem in item_elem.children():
+                        item[child_elem.name] = child_elem.gettext()
+                    report.items.append(item)
+                report.insert()
 
-        # If this was the last step in the recipe we mark the build as
-        # completed otherwise just update last_activity
-        if last_step:
-            self.log.info('Slave %s completed build %d ("%s" as of [%s])',
-                          build.slave, build.id, build.config, build.rev)
-            build.stopped = step.stopped
-            build.last_activity = build.stopped
+            # If this was the last step in the recipe we mark the build as
+            # completed otherwise just update last_activity
+            if last_step:
+                self.log.info('Slave %s completed build %d ("%s" as of [%s])',
+                              build.slave, build.id, build.config, build.rev)
+                build.stopped = step.stopped
+                build.last_activity = build.stopped
 
-            # Determine overall outcome of the build by checking the outcome
-            # of the individual steps against the "onerror" specification of
-            # each step in the recipe
-            for num, recipe_step in enumerate(recipe):
-                step = BuildStep.fetch(self.env, build.id, recipe_step.id)
-                if step.status == BuildStep.FAILURE:
-                    if recipe_step.onerror == 'fail' or \
-                            recipe_step.onerror == 'continue':
-                        build.status = Build.FAILURE
-                        break
+                # Determine overall outcome of the build by checking the outcome
+                # of the individual steps against the "onerror" specification of
+                # each step in the recipe
+                for num, recipe_step in enumerate(recipe):
+                    step = BuildStep.fetch(self.env, build.id, recipe_step.id)
+                    if step.status == BuildStep.FAILURE:
+                        if recipe_step.onerror == 'fail' or \
+                                recipe_step.onerror == 'continue':
+                            build.status = Build.FAILURE
+                            break
+                else:
+                    build.status = Build.SUCCESS
+
+                build.update()
             else:
-                build.status = Build.SUCCESS
+                build.last_activity = step.stopped
+                build.update()
 
-            build.update(db=db)
-        else:
-            build.last_activity = step.stopped
-            build.update(db=db)
+                # start the next step.
+                for num, recipe_step in enumerate(recipe):
+                    if num == index + 1:
+                        next_step = recipe_step
+                if next_step is None:
+                    self._send_error(req, HTTP_FORBIDDEN,
+                                     'Unable to find step after ' % stepname)
 
-            # start the next step.
-            for num, recipe_step in enumerate(recipe):
-                if num == index + 1:
-                    next_step = recipe_step
-            if next_step is None:
-                self._send_error(req, HTTP_FORBIDDEN,
-                                 'Unable to find step after ' % stepname)
+                step = self._start_new_step(build, next_step.id)
+                step.insert()
 
-            step = self._start_new_step(build, next_step.id)
-            step.insert(db=db)
-
-        db.commit()
+        #commit
 
         if last_step:
             for listener in BuildSystem(self.env).listeners:

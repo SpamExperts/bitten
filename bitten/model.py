@@ -65,17 +65,15 @@ class BuildConfig(object):
         database."""
         assert self.exists, 'Cannot delete non-existing configuration'
         with self.env.db_transaction as db:
-            db = self.env.get_db_cnx()
-            handle_ta = True
 
-            for platform in list(TargetPlatform.select(self.env, self.name, db=db)):
-                platform.delete(db=db)
+            for platform in list(TargetPlatform.select(self.env, self.name)):
+                platform.delete()
 
-            for build in list(Build.select(self.env, config=self.name, db=db)):
-                build.delete(db=db)
+            for build in list(Build.select(self.env, config=self.name)):
+                build.delete()
 
             # Delete attachments
-            Attachment.delete_all(self.env, 'build', self.resource.id, db)
+            Attachment.delete_all(self.env, 'build', self.resource.id)
 
             cursor = db.cursor()
             cursor.execute("DELETE FROM bitten_config WHERE name=%s", (self.name,))
@@ -237,7 +235,7 @@ class TargetPlatform(object):
         """Remove the target platform from the database."""
         with self.env.db_transaction as db:
 
-            for build in Build.select(self.env, platform=self.id, status=Build.PENDING, db=db):
+            for build in Build.select(self.env, platform=self.id, status=Build.PENDING):
                 build.delete()
 
             cursor = db.cursor()
@@ -978,7 +976,7 @@ class Report(object):
                            "ORDER BY category" % (' '.join(joins), where),
                            [wc[1] for wc in where_clauses])
             for (id, ) in cursor:
-                yield Report.fetch(env, id, db=db)
+                yield Report.fetch(env, id)
 
     select = classmethod(select)
 
