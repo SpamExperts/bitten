@@ -21,13 +21,13 @@ class BittenNotifyBaseTest(unittest.TestCase):
         self.env = EnvironmentStub(enable=['trac.*', 'bitten.notify.*',
                                            'bitten.tests.notify.*'])
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        connector, _ = DatabaseManager(self.env)._get_connector()
-        for table in schema:
-            for stmt in connector.to_sql(table):
-                cursor.execute(stmt)
-        db.commit()
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            connector, _ = DatabaseManager(self.env).get_connector()
+            for table in schema:
+                for stmt in connector.to_sql(table):
+                    cursor.execute(stmt)
+        #commit
 
         # Hook up a dummy repository
         self.repos = Mock(

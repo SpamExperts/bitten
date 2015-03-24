@@ -45,19 +45,19 @@ class BaseUpgradeTestCase(unittest.TestCase):
         logs_dir = os.path.join(self.env.path, logs_dir)
         self.logs_dir = logs_dir
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
 
-        for table_name in self.other_tables:
-            cursor.execute("DROP TABLE IF EXISTS %s" % (table_name,))
+            for table_name in self.other_tables:
+                cursor.execute("DROP TABLE IF EXISTS %s" % (table_name,))
 
-        connector, _ = DatabaseManager(self.env)._get_connector()
-        for table in self.schema:
-            cursor.execute("DROP TABLE IF EXISTS %s" % (table.name,))
-            for stmt in connector.to_sql(table):
-                cursor.execute(stmt)
+            connector, _ = DatabaseManager(self.env).get_connector()
+            for table in self.schema:
+                cursor.execute("DROP TABLE IF EXISTS %s" % (table.name,))
+                for stmt in connector.to_sql(table):
+                    cursor.execute(stmt)
 
-        db.commit()
+        #commit
 
     def tearDown(self):
         shutil.rmtree(self.env.path)
@@ -88,35 +88,35 @@ class UpgradeHelperTestCase(BaseUpgradeTestCase):
     ]
 
     def test_update_sequence(self):
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
 
-        for rowid, name in [(1, 'a'), (2, 'b'), (3, 'c')]:
-            cursor.execute("INSERT INTO test_update_sequence (id, name)"
-                " VALUES (%s, %s)", (rowid, name))
-        update_sequence(self.env, db, 'test_update_sequence', 'id')
+            for rowid, name in [(1, 'a'), (2, 'b'), (3, 'c')]:
+                cursor.execute("INSERT INTO test_update_sequence (id, name)"
+                    " VALUES (%s, %s)", (rowid, name))
+            update_sequence(self.env, db, 'test_update_sequence', 'id')
 
-        cursor.execute("INSERT INTO test_update_sequence (name)"
-            " VALUES (%s)", ('d',))
+            cursor.execute("INSERT INTO test_update_sequence (name)"
+                " VALUES (%s)", ('d',))
 
-        cursor.execute("SELECT id FROM test_update_sequence WHERE name = %s",
-            ('d',))
-        row = cursor.fetchone()
-        self.assertEqual(row[0], 4)
+            cursor.execute("SELECT id FROM test_update_sequence WHERE name = %s",
+                ('d',))
+            row = cursor.fetchone()
+            self.assertEqual(row[0], 4)
 
     def test_drop_index(self):
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
 
-        cursor.execute("INSERT INTO test_drop_index (id, name)"
-            " VALUES (%s, %s)", (1, 'a'))
+            cursor.execute("INSERT INTO test_drop_index (id, name)"
+                " VALUES (%s, %s)", (1, 'a'))
 
-        def do_drop():
-            drop_index(self.env, db, 'test_drop_index', 'test_drop_index_name_idx')
+            def do_drop():
+                drop_index(self.env, db, 'test_drop_index', 'test_drop_index_name_idx')
 
-        # dropping the index should succeed the first time and fail the next
-        do_drop()
-        self.assertRaises(Exception, do_drop)
+            # dropping the index should succeed the first time and fail the next
+            do_drop()
+            self.assertRaises(Exception, do_drop)
 
 
 class UpgradeScriptsTestCase(BaseUpgradeTestCase):
@@ -204,28 +204,28 @@ class UpgradeScriptsTestCase(BaseUpgradeTestCase):
     def _do_upgrade(self):
         """Do an full upgrade."""
         import inspect
-        db = self.env.get_db_cnx()
+        with self.env.db_transaction as db:
 
-        versions = sorted(upgrades.map.keys())
-        for version in versions:
-            for function in upgrades.map.get(version):
-                self.assertTrue(inspect.getdoc(function))
-                function(self.env, db)
+            versions = sorted(upgrades.map.keys())
+            for version in versions:
+                for function in upgrades.map.get(version):
+                    self.assertTrue(inspect.getdoc(function))
+                    function(self.env, db)
 
-        db.commit()
+        #commit
 
     def _insert_data(self, data):
         """Insert data for upgrading."""
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
 
-        for table, cols, vals in data:
-            cursor.executemany("INSERT INTO %s (%s) VALUES (%s)"
-                % (table, ','.join(cols),
-                ','.join(['%s' for c in cols])),
-                vals)
+            for table, cols, vals in data:
+                cursor.executemany("INSERT INTO %s (%s) VALUES (%s)"
+                    % (table, ','.join(cols),
+                    ','.join(['%s' for c in cols])),
+                    vals)
 
-        db.commit()
+        #commit
 
     def _check_basic_upgrade(self):
         """Check the results of an upgrade of basic data."""
@@ -279,15 +279,16 @@ class UpgradeScriptsTestCase(BaseUpgradeTestCase):
     def _check_postgres_sequence(self, tbl, col):
         """Check a PostgreSQL sequence for the given table and column."""
         seq = '%s_%s_seq' % (tbl, col)
-        cursor = self.env.get_db_cnx().cursor()
-        cursor.execute("SELECT MAX(%s) FROM %s" % (col, tbl))
-        current_max = cursor.fetchone()[0] or 0 # if currently None
-        cursor.execute("SELECT nextval('%s')" % (seq,))
-        current_seq = cursor.fetchone()[0] - 1
-        self.assertEqual(current_max, current_seq,
-            "On %s (col: %s) expected column max (%d) "
-            "and sequence value (%d) to match"
-            % (tbl, col, current_max, current_seq))
+        with self.env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("SELECT MAX(%s) FROM %s" % (col, tbl))
+            current_max = cursor.fetchone()[0] or 0 # if currently None
+            cursor.execute("SELECT nextval('%s')" % (seq,))
+            current_seq = cursor.fetchone()[0] - 1
+            self.assertEqual(current_max, current_seq,
+                "On %s (col: %s) expected column max (%d) "
+                "and sequence value (%d) to match"
+                % (tbl, col, current_max, current_seq))
 
     def test_null_upgrade(self):
         self._do_upgrade()
@@ -299,17 +300,17 @@ class UpgradeScriptsTestCase(BaseUpgradeTestCase):
 
     def test_upgrade_via_buildsetup(self):
         self._insert_data(self.basic_data)
-        db = self.env.get_db_cnx()
-        build_setup = main.BuildSetup(self.env)
-        self.assertTrue(build_setup.environment_needs_upgrade(db))
-        build_setup.upgrade_environment(db)
-        self._check_basic_upgrade()
+        with self.env.db_transaction as db:
+            build_setup = main.BuildSetup(self.env)
+            self.assertTrue(build_setup.environment_needs_upgrade(db))
+            build_setup.upgrade_environment(db)
+            self._check_basic_upgrade()
 
-        # check bitten table version
-        cursor = db.cursor()
-        cursor.execute("SELECT value FROM system WHERE name='bitten_version'")
-        rows = cursor.fetchall()
-        self.assertEqual(rows, [(str(model.schema_version),)])
+            # check bitten table version
+            cursor = db.cursor()
+            cursor.execute("SELECT value FROM system WHERE name='bitten_version'")
+            rows = cursor.fetchall()
+            self.assertEqual(rows, [(str(model.schema_version),)])
 
     def test_fix_log_levels_misnaming(self):
         logfiles = {

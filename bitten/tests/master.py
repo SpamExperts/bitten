@@ -45,12 +45,12 @@ class BuildMasterTestCase(unittest.TestCase):
         PermissionSystem(self.env).grant_permission('hal', 'BUILD_EXEC')
 
         # Create tables
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        connector, _ = DatabaseManager(self.env)._get_connector()
-        for table in schema:
-            for stmt in connector.to_sql(table):
-                cursor.execute(stmt)
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            connector, _ = DatabaseManager(self.env).get_connector()
+            for table in schema:
+                for stmt in connector.to_sql(table):
+                    cursor.execute(stmt)
 
         # Hook up a dummy repository
         self.repos = Mock(get_changeset=lambda rev: Mock(author = 'author'))

@@ -31,18 +31,18 @@ class CollectChangesTestCase(unittest.TestCase):
         self.env = EnvironmentStub(enable=['trac.*', 'bitten.*'])
         self.env.path = tempfile.mkdtemp()
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        connector, _ = DatabaseManager(self.env)._get_connector()
-        for table in schema:
-            for stmt in connector.to_sql(table):
-                cursor.execute(stmt)
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            connector, _ = DatabaseManager(self.env)._get_connector()
+            for table in schema:
+                for stmt in connector.to_sql(table):
+                    cursor.execute(stmt)
 
-        self.config = BuildConfig(self.env, name='test', path='somepath')
-        self.config.insert(db=db)
-        self.platform = TargetPlatform(self.env, config='test', name='Foo')
-        self.platform.insert(db=db)
-        db.commit()
+            self.config = BuildConfig(self.env, name='test', path='somepath')
+            self.config.insert()
+            self.platform = TargetPlatform(self.env, config='test', name='Foo')
+            self.platform.insert()
+        #commit()
 
         # Hook up a dummy repository
         self.repos = Mock()
@@ -143,13 +143,13 @@ class BuildQueueTestCase(unittest.TestCase):
         self.env = EnvironmentStub(enable=['trac.*', 'bitten.*'])
         self.env.path = tempfile.mkdtemp()
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        connector, _ = DatabaseManager(self.env)._get_connector()
-        for table in schema:
-            for stmt in connector.to_sql(table):
-                cursor.execute(stmt)
-        db.commit()
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            connector, _ = DatabaseManager(self.env)._get_connector()
+            for table in schema:
+                for stmt in connector.to_sql(table):
+                    cursor.execute(stmt)
+        #commit
 
         # Hook up a dummy repository
         self.repos = Mock()
