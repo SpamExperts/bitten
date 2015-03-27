@@ -23,12 +23,12 @@ from bitten.report.coverage import TestCoverageChartGenerator, \
 
 def env_stub_with_tables():
     env = EnvironmentStub(enable=['trac.*', 'bitten.*'])
-    db = env.get_db_cnx()
-    cursor = db.cursor()
-    connector, _ = DatabaseManager(env)._get_connector()
-    for table in schema:
-        for stmt in connector.to_sql(table):
-            cursor.execute(stmt)
+    with self.env.db_transaction as db:
+        cursor = db.cursor()
+        connector, _ = DatabaseManager(env).get_connector()
+        for table in schema:
+            for stmt in connector.to_sql(table):
+                cursor.execute(stmt)
     return env
 
 class TestCoverageChartGeneratorTestCase(unittest.TestCase):

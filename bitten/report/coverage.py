@@ -33,9 +33,9 @@ class TestCoverageChartGenerator(Component):
     def generate_chart_data(self, req, config, category):
         assert category == 'coverage'
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        cursor.execute("""
+        with self.env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("""
 SELECT build.rev, SUM(%s) AS loc, SUM(%s * %s / 100) AS cov
 FROM bitten_build AS build
  LEFT OUTER JOIN bitten_report AS report ON (report.build=build.id)
@@ -54,16 +54,17 @@ ORDER BY build.rev_time""" % (db.cast('item_lines.value', 'int'),
                                config.min_rev_time(self.env),
                                config.max_rev_time(self.env)))
 
-        prev_rev = None
-        coverage = []
-        for rev, loc, cov in cursor:
-            if rev != prev_rev:
-                coverage.append([rev, 0, 0])
-            if loc > coverage[-1][1]:
-                coverage[-1][1] = int(loc)
-            if cov > coverage[-1][2]:
-                coverage[-1][2] = int(cov)
-            prev_rev = rev
+            prev_rev = None
+            coverage = []
+            for rev, loc, cov in cursor:
+                if rev != prev_rev:
+                    coverage.append([rev, 0, 0])
+                if loc > coverage[-1][1]:
+                    coverage[-1][1] = int(loc)
+                if cov > coverage[-1][2]:
+                    coverage[-1][2] = int(cov)
+                prev_rev = rev
+        #query
 
         data = {'title': 'Test Coverage',
                 'data': [
@@ -90,9 +91,9 @@ class TestCoverageSummarizer(Component):
     def render_summary(self, req, config, build, step, category):
         assert category == 'coverage'
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        cursor.execute("""
+        with self.env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("""
 SELECT item_name.value AS unit, item_file.value AS file,
        max(item_lines.value) AS loc, max(item_percentage.value) AS cov
 FROM bitten_report AS report
@@ -109,20 +110,20 @@ WHERE category='coverage' AND build=%s AND step=%s
 GROUP BY file, item_name.value
 ORDER BY item_name.value""", (build.id, step.name))
 
-        units = []
-        total_loc, total_cov = 0, 0
-        for unit, file, loc, cov in cursor:
-            try:
-                loc, cov = int(loc), float(cov)
-            except TypeError:
-                continue # no rows
-            if loc:
-                d = {'name': unit, 'loc': loc, 'cov': int(cov)}
-                if file:
-                    d['href'] = req.href.browser(config.path, file, rev=build.rev, annotate='coverage')
-                units.append(d)
-                total_loc += loc
-                total_cov += loc * cov
+            units = []
+            total_loc, total_cov = 0, 0
+            for unit, file, loc, cov in cursor:
+                try:
+                    loc, cov = int(loc), float(cov)
+                except TypeError:
+                    continue # no rows
+                if loc:
+                    d = {'name': unit, 'loc': loc, 'cov': int(cov)}
+                    if file:
+                        d['href'] = req.href.browser(config.path, file, rev=build.rev, annotate='coverage')
+                    units.append(d)
+                    total_loc += loc
+                    total_cov += loc * cov
 
         coverage = 0
         if total_loc != 0:
@@ -188,9 +189,9 @@ class TestCoverageAnnotator(Component):
         self.log.debug("Looking for coverage report for %s@%s [%s:%s]..." % (
                         full_path, str(resource.version), created, version))
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        cursor.execute("""
+        with self.env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("""
                 SELECT b.id, b.rev, i2.value
                 FROM bitten_config AS c
                     INNER JOIN bitten_build AS b ON c.name=b.config
@@ -202,15 +203,16 @@ class TestCoverageAnnotator(Component):
                     AND b.rev_time<=%s
                     AND """ + db.concat('c.path', "'/'", 'i1.value') + """=%s
                 ORDER BY b.rev_time DESC LIMIT 1""" ,
-            (created_time, version_time, full_path))
+                (created_time, version_time, full_path))
 
-        row = cursor.fetchone()
-        if row:
-            build_id, build_rev, line_hits = row
-            coverage = line_hits.split()
-            self.log.debug("Coverage annotate for %s@%s using build %d: %s",
-                            resource.id, build_rev, build_id, coverage)
-            return coverage
+            row = cursor.fetchone()
+            if row:
+                build_id, build_rev, line_hits = row
+                coverage = line_hits.split()
+                self.log.debug("Coverage annotate for %s@%s using build %d: %s",
+                                resource.id, build_rev, build_id, coverage)
+                return coverage
+
         add_warning(context.req, "No coverage annotation found for "
                                  "/%s for revision range [%s:%s]." % (
                                  resource.id.lstrip('/'), version, created))

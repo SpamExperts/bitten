@@ -49,75 +49,74 @@ class BuildDeleter(object):
         print "Items to delete for build %r" % (build,)
         print "-------------------------------"
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
 
-        print "Attachments for build resource:"
-        cursor.execute("SELECT config FROM bitten_build WHERE id=%s", (build,))
-        config = cursor.fetchone()[0]
-        print "  %s/%s" % (config, build)
+            print "Attachments for build resource:"
+            cursor.execute("SELECT config FROM bitten_build WHERE id=%s", (build,))
+            config = cursor.fetchone()[0]
+            print "  %s/%s" % (config, build)
 
-        print "Log files:"
-        print " ", "\n  ".join(self._log_files(cursor, build))
+            print "Log files:"
+            print " ", "\n  ".join(self._log_files(cursor, build))
 
-        print "Rows from bitten_log with ids:"
-        cursor.execute("SELECT id FROM bitten_log WHERE build=%s", (build,))
-        print " ", "\n  ".join(str(row[0]) for row in cursor.fetchall())
+            print "Rows from bitten_log with ids:"
+            cursor.execute("SELECT id FROM bitten_log WHERE build=%s", (build,))
+            print " ", "\n  ".join(str(row[0]) for row in cursor.fetchall())
 
-        print "Rows from bitten_report with ids:"
-        cursor.execute("SELECT id FROM bitten_report WHERE build=%s", (build,))
-        print " ", "\n  ".join(str(row[0]) for row in cursor.fetchall())
-        print "Rows from bitten_report_item with report set to these ids will"
-        print "also be deleted."
+            print "Rows from bitten_report with ids:"
+            cursor.execute("SELECT id FROM bitten_report WHERE build=%s", (build,))
+            print " ", "\n  ".join(str(row[0]) for row in cursor.fetchall())
+            print "Rows from bitten_report_item with report set to these ids will"
+            print "also be deleted."
 
-        print "Rows from bitten_step for this build with names:"
-        cursor.execute("SELECT name FROM bitten_step WHERE build=%s", (build,))
-        print " ", "\n  ".join(str(row[0]) for row in cursor.fetchall())
+            print "Rows from bitten_step for this build with names:"
+            cursor.execute("SELECT name FROM bitten_step WHERE build=%s", (build,))
+            print " ", "\n  ".join(str(row[0]) for row in cursor.fetchall())
 
-        print "Row from bitten_build with id:"
-        cursor.execute("SELECT id FROM bitten_build WHERE id=%s", (build,))
-        print " ", "\n  ".join(str(row[0]) for row in cursor.fetchall())
+            print "Row from bitten_build with id:"
+            cursor.execute("SELECT id FROM bitten_build WHERE id=%s", (build,))
+            print " ", "\n  ".join(str(row[0]) for row in cursor.fetchall())
 
     def remove(self, build):
         """Delete what is linked to the build."""
         print "Deleting items for build %r" % (build,)
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
 
-        print "Determining associated config."
-        cursor.execute("SELECT config FROM bitten_build WHERE id=%s", (build,))
-        config = cursor.fetchone()[0]
+            print "Determining associated config."
+            cursor.execute("SELECT config FROM bitten_build WHERE id=%s", (build,))
+            config = cursor.fetchone()[0]
 
-        print "Collecting log files."
-        filenames = self._log_files(cursor, build)
+            print "Collecting log files."
+            filenames = self._log_files(cursor, build)
 
-        try:
-            print "Deleting bitten_log entries."
-            cursor.execute("DELETE FROM bitten_log WHERE build=%s", (build,))
+            try:
+                print "Deleting bitten_log entries."
+                cursor.execute("DELETE FROM bitten_log WHERE build=%s", (build,))
 
-            print "Deleting bitten_report_item_entries."
-            cursor.execute("DELETE FROM bitten_report_item WHERE report IN ("
-                "SELECT bitten_report.id FROM bitten_report "
-                "WHERE bitten_report.build=%s"
-                ")", (build,))
+                print "Deleting bitten_report_item_entries."
+                cursor.execute("DELETE FROM bitten_report_item WHERE report IN ("
+                    "SELECT bitten_report.id FROM bitten_report "
+                    "WHERE bitten_report.build=%s"
+                    ")", (build,))
 
-            print "Deleting bitten_report entires."
-            cursor.execute("DELETE FROM bitten_report WHERE build=%s",
-                (build,))
+                print "Deleting bitten_report entires."
+                cursor.execute("DELETE FROM bitten_report WHERE build=%s",
+                    (build,))
 
-            print "Deleting bitten_step entries."
-            cursor.execute("DELETE FROM bitten_step WHERE build=%s", (build,))
+                print "Deleting bitten_step entries."
+                cursor.execute("DELETE FROM bitten_step WHERE build=%s", (build,))
 
-            print "Delete bitten_build entry."
-            cursor.execute("DELETE FROM bitten_build WHERE id=%s", (build,))
-        except:
-            db.rollback()
-            print "Build deletion failed. Database rolled back."
-            raise
+                print "Delete bitten_build entry."
+                cursor.execute("DELETE FROM bitten_build WHERE id=%s", (build,))
+            except:
+                print "Build deletion failed. Database rolled back."
+                raise
 
-        print "Bitten database changes committed."
-        db.commit()
+            print "Bitten database changes committed."
+        #commit
 
         print "Removing log files."
         for filename in filenames:
@@ -125,7 +124,7 @@ class BuildDeleter(object):
 
         print "Removing attachments."
         resource = Resource('build', '%s/%s' % (config, build))
-        Attachment.delete_all(self.env, 'build', resource.id, db)
+        Attachment.delete_all(self.env, 'build', resource.id)
 
 
 def main():

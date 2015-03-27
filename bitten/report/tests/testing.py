@@ -24,12 +24,12 @@ class TestResultsChartGeneratorTestCase(unittest.TestCase):
         self.env = EnvironmentStub()
         self.env.path = ''
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        connector, _ = DatabaseManager(self.env)._get_connector()
-        for table in schema:
-            for stmt in connector.to_sql(table):
-                cursor.execute(stmt)
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            connector, _ = DatabaseManager(self.env).get_connector()
+            for table in schema:
+                for stmt in connector.to_sql(table):
+                    cursor.execute(stmt)
 
     def test_supported_categories(self):
         generator = TestResultsChartGenerator(self.env)
@@ -117,12 +117,12 @@ class TestResultsSummarizerTestCase(unittest.TestCase):
         self.env = EnvironmentStub()
         self.env.path = ''
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        connector, _ = DatabaseManager(self.env)._get_connector()
-        for table in schema:
-            for stmt in connector.to_sql(table):
-                cursor.execute(stmt)
+        with self.env.db_transaction as db:
+            cursor = db.cursor()
+            connector, _ = DatabaseManager(self.env).get_connector()
+            for table in schema:
+                for stmt in connector.to_sql(table):
+                    cursor.execute(stmt)
 
     def test_testcase_errors_and_failures(self):
         config = Mock(name='trunk', path='/somewhere', 

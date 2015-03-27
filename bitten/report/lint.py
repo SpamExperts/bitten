@@ -29,11 +29,11 @@ class PyLintChartGenerator(Component):
     def generate_chart_data(self, req, config, category):
         assert category == 'lint'
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
+        with self.env.db_query as db:
+            cursor = db.cursor()
 
-        #self.log.debug('config.name=\'%s\'' % (config.name,))
-        query = """
+            #self.log.debug('config.name=\'%s\'' % (config.name,))
+            query = """
 select build.rev, 
  (select count(*) from bitten_report_item_category as item
   where item.report = report.id and item.value='convention'),
@@ -52,24 +52,24 @@ order by build.rev_time;""" % (config.name,
                                config.min_rev_time(self.env),
                                config.max_rev_time(self.env))
 
-        #self.log.debug('sql=\'%s\'' % (query,))
-        cursor.execute(query)
+            #self.log.debug('sql=\'%s\'' % (query,))
+            cursor.execute(query)
 
-        lint = []
-        prev_rev = None
-        prev_counts = None
+            lint = []
+            prev_rev = None
+            prev_counts = None
 
-        for rev, conv, err, ref, warn in cursor:
-            total = conv + err + ref + warn
-            curr_counts = [rev, total, conv, err, ref, warn]
-            if rev != prev_rev:
-                lint.append(curr_counts)
-            else:
-                # cunningly / dubiously set rev = max(rev, rev) along with the counts
-                lint[-1] = [max(prev, curr) for prev, curr in zip(curr_counts, lint[-1])]
-                # recalculate total
-                lint[-1][1] = sum(lint[-1][2:])
-            prev_rev = rev
+            for rev, conv, err, ref, warn in cursor:
+                total = conv + err + ref + warn
+                curr_counts = [rev, total, conv, err, ref, warn]
+                if rev != prev_rev:
+                    lint.append(curr_counts)
+                else:
+                    # cunningly / dubiously set rev = max(rev, rev) along with the counts
+                    lint[-1] = [max(prev, curr) for prev, curr in zip(curr_counts, lint[-1])]
+                    # recalculate total
+                    lint[-1][1] = sum(lint[-1][2:])
+                prev_rev = rev
 
         data = {'title': 'Lint Problems by Type',
                 'data': [
@@ -103,9 +103,9 @@ class PyLintSummarizer(Component):
         add_script(req, 'common/js/folding.js')
         add_script(req, 'bitten/bitten_lint.js')
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        cursor.execute("""
+        with self.env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("""
 SELECT item_type.value AS type, item_file.value AS file,
     item_line.value as line, item_category.value as category,
     item_msg.value as msg,
@@ -128,53 +128,53 @@ FROM bitten_report AS report
 WHERE report.category='lint' AND build=%s AND step=%s
 ORDER BY item_file.value, item_type.value""", (build.id, step.name))
 
-        file_data = {}
+            file_data = {}
 
-        type_total = {}
-        category_total = {'convention': 0, 'refactor': 0, 'warning': 0, 'error': 0}
-        line_total = 0
-        file_total = 0
-        seen_files = {}
+            type_total = {}
+            category_total = {'convention': 0, 'refactor': 0, 'warning': 0, 'error': 0}
+            line_total = 0
+            file_total = 0
+            seen_files = {}
 
-        for type, file, line, category, msg, report_category in cursor:
-            if not file_data.has_key(file):
-                file_data[file] = {'file': file, 'type': {}, 'lines': 0, 'category': {}, 'details': []}
+            for type, file, line, category, msg, report_category in cursor:
+                if not file_data.has_key(file):
+                    file_data[file] = {'file': file, 'type': {}, 'lines': 0, 'category': {}, 'details': []}
 
-            d = file_data[file]
-            #d = {'type': type, 'line': line, 'category': category}
-            if not d['type'].has_key(type):
-                d['type'][type] = 0
-            d['type'][type] += 1
+                d = file_data[file]
+                #d = {'type': type, 'line': line, 'category': category}
+                if not d['type'].has_key(type):
+                    d['type'][type] = 0
+                d['type'][type] += 1
 
-            d['lines'] += 1
-            line_total += 1
+                d['lines'] += 1
+                line_total += 1
 
-            if line is not None and line.isdigit():
-                line = int(line)
+                if line is not None and line.isdigit():
+                    line = int(line)
 
-            d['details'].append((
-                    line is None and '??' or line,
-                    type is None and '??' or type,
-                    msg is None and '-' or msg))
+                d['details'].append((
+                        line is None and '??' or line,
+                        type is None and '??' or type,
+                        msg is None and '-' or msg))
 
-            if not d['category'].has_key(category):
-                d['category'][category] = 0
-            d['category'][category] += 1
+                if not d['category'].has_key(category):
+                    d['category'][category] = 0
+                d['category'][category] += 1
 
-            if file:
-                d['href'] = req.href.browser(config.path, file)
+                if file:
+                    d['href'] = req.href.browser(config.path, file)
 
-            if not type_total.has_key(type):
-                type_total[type] = 0
-            type_total[type] += 1
+                if not type_total.has_key(type):
+                    type_total[type] = 0
+                type_total[type] += 1
 
-            if not category_total.has_key(category):
-                category_total[category] = 0
-            category_total[category] += 1
+                if not category_total.has_key(category):
+                    category_total[category] = 0
+                category_total[category] += 1
 
-            if not seen_files.has_key(file):
-                seen_files[file] = 0
-                file_total += 1
+                if not seen_files.has_key(file):
+                    seen_files[file] = 0
+                    file_total += 1
 
         data = []
         for d in file_data.values():

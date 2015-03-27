@@ -26,9 +26,9 @@ class TestResultsChartGenerator(Component):
     def generate_chart_data(self, req, config, category):
         assert category == 'test'
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        cursor.execute("""
+        with self.env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("""
 SELECT build.rev, build.platform, item_status.value AS status, COUNT(*) AS num
 FROM bitten_build AS build
  LEFT OUTER JOIN bitten_report AS report ON (report.build=build.id)
@@ -41,26 +41,26 @@ ORDER BY build.rev_time, build.platform""", (config.name,
                                              config.min_rev_time(self.env),
                                              config.max_rev_time(self.env)))
 
-        prev_rev = None
-        prev_platform, platform_total = None, 0
-        tests = []
-        for rev, platform, status, num in cursor:
-            if rev != prev_rev:
-                tests.append([rev, 0, 0, 0])
-                prev_rev = rev
-                platform_total = 0
-            if platform != prev_platform:
-                prev_platform = platform
-                platform_total = 0
+            prev_rev = None
+            prev_platform, platform_total = None, 0
+            tests = []
+            for rev, platform, status, num in cursor:
+                if rev != prev_rev:
+                    tests.append([rev, 0, 0, 0])
+                    prev_rev = rev
+                    platform_total = 0
+                if platform != prev_platform:
+                    prev_platform = platform
+                    platform_total = 0
 
-            platform_total += num
-            tests[-1][1] = max(platform_total, tests[-1][1])
-            if status == 'success':
-                pass
-            elif status == 'ignore':
-                tests[-1][3] = max(num, tests[-1][3])
-            else:
-                tests[-1][2] = max(num, tests[-1][2])
+                platform_total += num
+                tests[-1][1] = max(platform_total, tests[-1][1])
+                if status == 'success':
+                    pass
+                elif status == 'ignore':
+                    tests[-1][3] = max(num, tests[-1][3])
+                else:
+                    tests[-1][2] = max(num, tests[-1][2])
 
         data = {'title': 'Unit Tests',
                 'data': [
@@ -89,9 +89,9 @@ class TestResultsSummarizer(Component):
     def render_summary(self, req, config, build, step, category):
         assert category == 'test'
 
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        cursor.execute("""
+        with self.env.db_query as db:
+            cursor = db.cursor()
+            cursor.execute("""
 SELECT item_fixture.value AS fixture, item_file.value AS file,
        COUNT(item_success.value) AS num_success,
        COUNT(item_ignore.value) AS num_ignore,
@@ -118,24 +118,24 @@ WHERE category='test' AND build=%s AND step=%s
 GROUP BY file, fixture
 ORDER BY fixture""", (build.id, step.name))
 
-        fixtures = []
-        total_success, total_ignore, total_failure, total_error = 0, 0, 0, 0
-        for fixture, file, num_success, num_ignore, num_failure, num_error in cursor:
-            fixtures.append({'name': fixture, 
-                             'num_success': num_success,
-                             'num_ignore': num_ignore,
-                             'num_error': num_error,
-                             'num_failure': num_failure})
-            total_success += num_success
-            total_ignore += num_ignore
-            total_failure += num_failure
-            total_error += num_error
-            if file:
-                fixtures[-1]['href'] = req.href.browser(config.path, file)
+            fixtures = []
+            total_success, total_ignore, total_failure, total_error = 0, 0, 0, 0
+            for fixture, file, num_success, num_ignore, num_failure, num_error in cursor:
+                fixtures.append({'name': fixture, 
+                                 'num_success': num_success,
+                                 'num_ignore': num_ignore,
+                                 'num_error': num_error,
+                                 'num_failure': num_failure})
+                total_success += num_success
+                total_ignore += num_ignore
+                total_failure += num_failure
+                total_error += num_error
+                if file:
+                    fixtures[-1]['href'] = req.href.browser(config.path, file)
 
-        # For each fixture, get a list of tests that don't succeed
-        for fixture in fixtures:
-            cursor.execute("""
+            # For each fixture, get a list of tests that don't succeed
+            for fixture in fixtures:
+                cursor.execute("""
 SELECT item_status.value AS status, item_name.value AS name,
        item_traceback.value AS traceback
 FROM bitten_report
@@ -153,17 +153,17 @@ FROM bitten_report
 WHERE category='test' AND build=%s AND step=%s AND item_status.value<>'success' AND
       item_fixture.value=%s""", (build.id, step.name, fixture['name']))
 
-            failures = []
-            for status, name, traceback in cursor:
-                # use the fixture name if a name isn't supplied for the
-                # individual test
-                if not name:
-                    name = fixture['name']
-                failures.append({'status': status,
-                                 'name': name,
-                                 'traceback': traceback})
-            if failures:
-                fixture['failures'] = failures
+                failures = []
+                for status, name, traceback in cursor:
+                    # use the fixture name if a name isn't supplied for the
+                    # individual test
+                    if not name:
+                        name = fixture['name']
+                    failures.append({'status': status,
+                                     'name': name,
+                                     'traceback': traceback})
+                if failures:
+                    fixture['failures'] = failures
 
         data = {'fixtures': fixtures,
                 'totals': {'success': total_success, 
