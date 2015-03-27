@@ -18,6 +18,8 @@ from trac.env import Environment
 from trac.attachment import Attachment
 from trac.resource import Resource
 
+from bitten.model import Report
+
 __version__ = "1.0a1"
 
 class BuildDeleter(object):
@@ -67,7 +69,7 @@ class BuildDeleter(object):
             print "Rows from bitten_report with ids:"
             cursor.execute("SELECT id FROM bitten_report WHERE build=%s", (build,))
             print " ", "\n  ".join(str(row[0]) for row in cursor.fetchall())
-            print "Rows from bitten_report_item with report set to these ids will"
+            print "Rows from bitten_report_item* with report set to these ids will"
             print "also be deleted."
 
             print "Rows from bitten_step for this build with names:"
@@ -97,10 +99,11 @@ class BuildDeleter(object):
                 cursor.execute("DELETE FROM bitten_log WHERE build=%s", (build,))
 
                 print "Deleting bitten_report_item_entries."
-                cursor.execute("DELETE FROM bitten_report_item WHERE report IN ("
-                    "SELECT bitten_report.id FROM bitten_report "
-                    "WHERE bitten_report.build=%s"
-                    ")", (build,))
+                for name in Report._item_tables(db):
+                    cursor.execute("DELETE FROM bitten_report_item_%s WHERE report IN ("
+                        "SELECT bitten_report.id FROM bitten_report "
+                        "WHERE bitten_report.build=%%s"
+                        ")" % name, (build,))
 
                 print "Deleting bitten_report entires."
                 cursor.execute("DELETE FROM bitten_report WHERE build=%s",

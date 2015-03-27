@@ -237,13 +237,17 @@ def add_report_tables(env, db):
             Column('step'), Column('category'), Column('generator'),
             Index(['build', 'step', 'category'])
         ]
-    report_item_schema_v6 = Table('bitten_report_item', key=('report', 'item', 'name'))[
-            Column('report', type='int'), Column('item', type='int'),
-            Column('name'), Column('value')
-        ]
-
-    connector, _ = DatabaseManager(env)._get_connector()
-    for table in [report_schema_v6, report_item_schema_v6]:
+    report_item_schema_v6 = []
+    for name in ('category', 'entries', 'file', 'fixture', 'line',
+                 'lines', 'msg', 'name', 'percentage', 'result',
+                 'status', 'traceback', 'type'):
+        report_item_schema_v6.append(
+            Table('bitten_report_item_%s' % name, key=('report', 'item'))[
+                  Column('report', type='int'), Column('item', type='int'),
+                  Column('value')])
+    #end
+    connector, _ = DatabaseManager(env).get_connector()
+    for table in [report_schema_v6] + report_item_schema_v6:
         for stmt in connector.to_sql(table):
             cursor.execute(stmt)
 
@@ -339,10 +343,10 @@ def xmldb_to_db(env, db):
         id = db.get_last_id(cursor, 'bitten_report')
 
         for idx, item in enumerate(items):
-            cursor.executemany("INSERT INTO bitten_report_item "
-                               "(report,item,name,value) VALUES (%s,%s,%s,%s)",
-                               [(id, idx, key, value) for key, value
-                                in item.items()])
+            for key, value in item.items():
+                cursor.execute("INSERT INTO bitten_report_item_" + key + " "
+                               "(report,item,value) VALUES (%s,%s,%s)",
+                               (id, idx, value))
 
     sys.stderr.write('\n')
     sys.stderr.flush()
@@ -354,13 +358,12 @@ def xmldb_to_db(env, db):
 def normalize_file_paths(env, db):
     """Normalize the file separator in file names in reports."""
     cursor = db.cursor()
-    cursor.execute("SELECT report,item,value FROM bitten_report_item "
-                   "WHERE name='file'")
+    cursor.execute("SELECT report,item,value FROM bitten_report_item_file")
     rows = cursor.fetchall() or []
     for report, item, value in rows:
         if '\\' in value:
-            cursor.execute("UPDATE bitten_report_item SET value=%s "
-                           "WHERE report=%s AND item=%s AND name='file'",
+            cursor.execute("UPDATE bitten_report_item_file SET value=%s "
+                           "WHERE report=%s AND item=%s",
                            (value.replace('\\', '/'), report, item))
 
 def fixup_generators(env, db):

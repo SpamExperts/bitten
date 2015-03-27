@@ -666,7 +666,7 @@ class ReportTestCase(BaseModelTestCase):
                            "FROM bitten_report WHERE id=%s", (report.id,))
             self.assertEqual((1, 'test', 'test', 'unittest'),
                              cursor.fetchone())
-            cursor.execute("SELECT COUNT(*) FROM bitten_report_item "
+            cursor.execute("SELECT COUNT(*) FROM bitten_report_item_name "
                            "WHERE report=%s", (report.id,))
             self.assertEqual(0, cursor.fetchone()[0])
 
@@ -677,13 +677,14 @@ class ReportTestCase(BaseModelTestCase):
                            "(build,step,category,generator) VALUES (%s,%s,%s,%s)",
                            (1, 'test', 'test', 'unittest'))
             report_id = db.get_last_id(cursor, 'bitten_report')
-            #TODO fix test
-            cursor.executemany("INSERT INTO bitten_report_item "
-                               "(report,item,name,value) VALUES (%s,%s,%s,%s)",
-                               [(report_id, 0, 'file', 'tests/foo.c'),
-                                (report_id, 0, 'result', 'failure'),
-                                (report_id, 1, 'file', 'tests/bar.c'),
-                                (report_id, 1, 'result', 'success')])
+            cursor.executemany("INSERT INTO bitten_report_item_file "
+                               "(report,item,value) VALUES (%s,%s,%s)",
+                               [(report_id, 0, 'tests/foo.c'),
+                                (report_id, 1, 'tests/bar.c')])
+            cursor.executemany("INSERT INTO bitten_report_item_result "
+                               "(report,item,value) VALUES (%s,%s,%s)",
+                                (report_id, 0, 'failure'),
+                                (report_id, 1, 'success')])
 
         report = Report.fetch(self.env, report_id)
         self.assertEquals(report_id, report.id)
@@ -705,19 +706,24 @@ class ReportTestCase(BaseModelTestCase):
                            "(build,step,category,generator) VALUES (%s,%s,%s,%s)",
                            (1, 'test', 'coverage', 'trace'))
             report2_id = db.get_last_id(cursor, 'bitten_report')
-            #TODO fix test
-            cursor.executemany("INSERT INTO bitten_report_item "
-                               "(report,item,name,value) VALUES (%s,%s,%s,%s)",
-                               [(report1_id, 0, 'file', 'tests/foo.c'),
-                                (report1_id, 0, 'result', 'failure'),
-                                (report1_id, 1, 'file', 'tests/bar.c'),
-                                (report1_id, 1, 'result', 'success'),
-                                (report2_id, 0, 'file', 'tests/foo.c'),
-                                (report2_id, 0, 'loc', '12'),
-                                (report2_id, 0, 'cov', '50'),
-                                (report2_id, 1, 'file', 'tests/bar.c'),
-                                (report2_id, 1, 'loc', '20'),
-                                (report2_id, 1, 'cov', '25')])
+            cursor.executemany("INSERT INTO bitten_report_item_file "
+                               "(report,item,value) VALUES (%s,%s,%s)",
+                               [(report1_id, 0, 'tests/foo.c'),
+                                (report1_id, 1, 'tests/bar.c'),
+                                (report2_id, 1, 'tests/bar.c'),
+                                (report2_id, 0, 'tests/foo.c'),
+            cursor.executemany("INSERT INTO bitten_report_item_result "
+                               "(report,item,value) VALUES (%s,%s,%s)",
+                                (report1_id, 0, 'failure'),
+                                (report1_id, 1, 'success'),
+            cursor.executemany("INSERT INTO bitten_report_item_lines "
+                               "(report,item,value) VALUES (%s,%s,%s)",
+                                (report2_id, 0, '12'),
+                                (report2_id, 1, '20'),
+            cursor.executemany("INSERT INTO bitten_report_item_percentage "
+                               "(report,item,value) VALUES (%s,%s,%s)",
+                                (report2_id, 0, '50'),
+                                (report2_id, 1, '25')])
 
         reports = Report.select(self.env, build=1, step='test')
         for idx, report in enumerate(reports):
@@ -735,9 +741,9 @@ class ReportTestCase(BaseModelTestCase):
                 self.assertEquals('coverage', report.category)
                 self.assertEquals('trace', report.generator)
                 self.assertEquals(2, len(report.items))
-                assert {'file': 'tests/foo.c', 'loc': '12', 'cov': '50'} \
+                assert {'file': 'tests/foo.c', 'lines': '12', 'percentage': '50'} \
                        in report.items
-                assert {'file': 'tests/bar.c', 'loc': '20', 'cov': '25'} \
+                assert {'file': 'tests/bar.c', 'lines': '20', 'percentage': '25'} \
                        in report.items
         self.assertEqual(1, idx)
 
