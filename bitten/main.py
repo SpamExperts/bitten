@@ -35,7 +35,7 @@ class BuildSetup(Component):
 
     def environment_created(self):
         # Create the required tables
-        with self.env.transaction as db:
+        with self.env.db_transaction as db:
             connector, _ = DatabaseManager(self.env).get_connector()
             cursor = db.cursor()
             for table in schema:
