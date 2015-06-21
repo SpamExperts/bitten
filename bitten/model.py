@@ -861,9 +861,9 @@ class Report(object):
             return self.tables
         #end
         cur = db.cursor()
-        #XXX add sqlite support
-        cur.execute("show tables like 'bitten_report_item_%'")
-        self.tables = set([ x[0][19:] for x in cur ])
+        tables = db.get_table_names()
+        self.tables = set([x[19:] for x in tables
+                           if x.startswith("bitten_report_item_")])
         return self.tables
     #end
 
