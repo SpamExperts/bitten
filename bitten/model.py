@@ -512,7 +512,7 @@ class Build(object):
         else:
             where = ""
 
-        with self.env.db_query as db:
+        with env.db_query as db:
             cursor = db.cursor()
             cursor.execute("SELECT id FROM bitten_build %s "
                            "ORDER BY rev_time DESC,config,slave"
@@ -861,6 +861,7 @@ class Report(object):
             return self.tables
         #end
         cur = db.cursor()
+        #XXX add sqlite support
         cur.execute("show tables like 'bitten_report_item_%'")
         self.tables = set([ x[0][19:] for x in cur ])
         return self.tables
