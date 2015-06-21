@@ -544,7 +544,7 @@ JOIN bitten_report AS report ON (report.build=build.id)
 WHERE build.config=%s AND build.rev_time >= %s AND build.rev_time <= %s""",
                        (config.name,
                         config.min_rev_time(self.env),
-                        config.max_rev_time(self.env)))
+                        config.max_rev_time(self.env))):
             yield category
 
 
