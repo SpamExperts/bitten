@@ -23,7 +23,7 @@ log = logging.getLogger('bitten.build.shtools')
 __docformat__ = 'restructuredtext en'
 
 def exec_(ctxt, executable=None, file_=None, output=None, args=None,
-          dir_=None, timeout=None):
+          dir_=None, timeout=None, exitcode="0"):
     """Execute a program or shell script.
     
     :param ctxt: the build context
@@ -44,7 +44,9 @@ def exec_(ctxt, executable=None, file_=None, output=None, args=None,
     returncode = execute(ctxt, executable=executable, file_=file_,
                          output=output, args=args, dir_=dir_,
                          timeout=timeout)
-    if returncode != 0:
+    if exitcode == "disabled":
+        return
+    if returncode != int(exitcode):
         ctxt.error('Executing %s failed (error code %s)' % (executable or file_,
                                                             returncode))
 
