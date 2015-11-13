@@ -295,7 +295,7 @@ class PyLintTestCase(unittest.TestCase):
     def test_summary_format(self):
         # thoroughly check on report line
         self.summary.write("""
-%s/module/file1.py:42: [C] Missing docstring
+%s/module/file1.py:42: [C0111(missing-docstring), ] Missing docstring
 """ % (self.ctxt.basedir,))
         self.summary.close()
         pythontools.pylint(self.ctxt, file_=self.summary.name)
@@ -315,8 +315,8 @@ class PyLintTestCase(unittest.TestCase):
     def test_summary_with_absolute_path(self):
         # One posix + one windows path to normalize
         self.summary.write("""
-%s/module/file1.py:42: [C] Missing docstring
-%s\\module\\file2.py:42: [C] Missing docstring
+%s/module/file1.py:42: [C0111(missing-docstring), ] Missing module docstring
+%s\\module\\file2.py:42: [C0111(missing-docstring), ] Missing module docstring
 """ % (self.ctxt.basedir, self.ctxt.basedir))
         self.summary.close()
         pythontools.pylint(self.ctxt, file_=self.summary.name)
@@ -334,8 +334,8 @@ class PyLintTestCase(unittest.TestCase):
     def test_summary_with_relative_path(self):
         # One posix + one windows path to normalize
         self.summary.write("""
-module/file1.py:42: [C] Missing docstring
-module\\file2.py:42: [C] Missing docstring
+module/file1.py:42: [C0111(missing-docstring), ] Missing module docstring
+module\\file2.py:42: [C0111(missing-docstring), ] Missing module docstring
 """)
         self.summary.close()
         pythontools.pylint(self.ctxt, file_=self.summary.name)
