@@ -147,9 +147,9 @@ def pylint(ctxt, file_=None):
     :param file\_: name of the file containing the Pylint output
     """
     assert file_, 'Missing required attribute "file"'
-    msg_re = re.compile(r'^(?P<file>.+):(?P<line>\d+): '
-                        r'\[(?P<type>[A-Z]\d*)(?:, (?P<tag>[\w\.]+))?\] '
-                        r'(?P<msg>.*)$')
+    msg_re = re.compile(r"^(?P<file>.+):(?P<line>\d+): "
+                        r"\[(?P<type>[WECR]\d+)\((?P<symbol>.+)\), "
+                        r"(?P<tag>.+)?\] (?P<msg>.+)$")
     msg_categories = dict(W='warning', E='error', C='convention', R='refactor')
 
     problems = xmlio.Fragment()
