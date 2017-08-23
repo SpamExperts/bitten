@@ -20,6 +20,7 @@ from trac.config import BoolOption, IntOption, Option
 from trac.core import *
 from trac.resource import ResourceNotFound
 from trac.web import IRequestHandler, RequestDone
+from trac.api import ISystemInfoProvider
 
 from bitten import PROTOCOL_VERSION
 from bitten.model import BuildConfig, Build, BuildStep, BuildLog, Report, \
@@ -46,7 +47,7 @@ HTTP_CONFLICT = 409
 class BuildMaster(Component):
     """Trac request handler implementation for the build master."""
 
-    implements(IRequestHandler)
+    implements(IRequestHandler, ISystemInfoProvider)
 
     # Configuration options
 
@@ -78,9 +79,10 @@ class BuildMaster(Component):
             if the project has a large repository or uses a non-Subversion
             repository such as Mercurial or Git.""")
 
-    def __init__(self):
-        self.env.systeminfo.append(('Bitten',
-                __import__('bitten', ['__version__']).__version__))
+    #  ISystemInfoProvider methods
+
+    def get_system_info(self):
+        yield 'Bitten', __import__('bitten', ['__version__']).__version__
 
     # IRequestHandler methods
 
