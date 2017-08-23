@@ -48,14 +48,16 @@ class BuildSetup(Component):
 
         #commit
 
-    def environment_needs_upgrade(self, db):
+    def environment_needs_upgrade(self, db=None):
+      with self.env.db_transaction as db:
         cursor = db.cursor()
         cursor.execute("SELECT value FROM system WHERE name='bitten_version'")
         row = cursor.fetchone()
         if not row or int(row[0]) < schema_version:
             return True
 
-    def upgrade_environment(self, db):
+    def upgrade_environment(self, db=None):
+      with self.env.db_transaction as db:
         cursor = db.cursor()
         cursor.execute("SELECT value FROM system WHERE name='bitten_version'")
         row = cursor.fetchone()
@@ -70,7 +72,7 @@ class BuildSetup(Component):
                     function(self.env, db)
                     cursor.execute("UPDATE system SET value=%s WHERE "
                            "name='bitten_version'", (version,))
-                db.commit()
+                #db.commit()
                 print "Bitten upgrade to version %d done." % version
                 self.log.info('Upgraded Bitten tables to version %d',
                                 version)
